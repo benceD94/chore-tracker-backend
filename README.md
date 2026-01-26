@@ -191,6 +191,49 @@ npm run lint
 npm run format
 ```
 
+## 🔄 CI/CD
+
+### GitHub Actions
+
+This project includes automated workflows for continuous integration and security:
+
+#### CI Workflow (`.github/workflows/ci.yml`)
+
+Runs automatically on every pull request and push to `main`/`develop` branches:
+
+- ✅ **Linting** - Ensures code follows style guidelines
+- 🧪 **Unit Tests** - Runs all test suites
+- 🏗️ **Build** - Verifies the application compiles successfully
+- 📊 **Coverage** - Generates test coverage reports
+- 🔢 **Matrix Testing** - Tests against Node.js 18.x and 20.x
+
+#### Security Workflow (`.github/workflows/security.yml`)
+
+Automated security scanning:
+
+- 🔍 **NPM Audit** - Checks for known vulnerabilities in dependencies
+- 📦 **Dependency Review** - Reviews dependencies in pull requests
+- 🔐 **CodeQL Analysis** - Static code analysis for security issues
+- ⏰ **Daily Scans** - Runs security audit daily at 00:00 UTC
+
+### Pull Request Template
+
+A PR template is provided to ensure consistent and thorough pull requests:
+
+- Description and change type
+- Related issues linking
+- Testing checklist
+- Review checklist
+
+### Status Badges
+
+Add these to your README once you've enabled the workflows:
+
+```markdown
+![CI](https://github.com/username/chore-tracker-backend/workflows/CI/badge.svg)
+![Security](https://github.com/username/chore-tracker-backend/workflows/Security%20Scan/badge.svg)
+```
+
 ## 🔒 Security Features
 
 - **Firebase ID Token Validation** - All protected routes verify Firebase authentication
