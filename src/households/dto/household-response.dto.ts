@@ -1,4 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
+import { UserResponseDto } from '../../users/dto/user-response.dto';
 
 export class HouseholdResponseDto {
   @ApiProperty({ description: 'Household document ID' })
@@ -8,7 +9,13 @@ export class HouseholdResponseDto {
   name: string;
 
   @ApiProperty({ description: 'Array of member UIDs' })
-  members: string[];
+  memberIds: string[];
+
+  @ApiProperty({
+    description: 'Array of member details populated from memberIds',
+    type: [UserResponseDto]
+  })
+  memberDetails: UserResponseDto[];
 
   @ApiProperty({ description: 'UID of the user who created the household' })
   createdBy: string;

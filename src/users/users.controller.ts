@@ -41,19 +41,7 @@ export class UsersController {
     status: 404,
     description: 'User not found',
   })
-  @ApiResponse({
-    status: 403,
-    description: 'Forbidden - can only access own profile',
-  })
-  async findOne(
-    @Param('uid') uid: string,
-    @CurrentUser() currentUser: FirebaseUser,
-  ): Promise<UserResponseDto> {
-    // Users can only access their own profile
-    if (currentUser.uid !== uid) {
-      throw new ForbiddenException('You can only access your own profile');
-    }
-
+  async findOne(@Param('uid') uid: string): Promise<UserResponseDto> {
     return this.usersService.findByUid(uid);
   }
 

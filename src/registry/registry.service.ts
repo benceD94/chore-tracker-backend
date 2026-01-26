@@ -5,6 +5,8 @@ import { BatchRegistryDto } from './dto/batch-registry.dto';
 import { RegistryQueryDto, RegistryFilter } from './dto/registry-query.dto';
 import { RegistryResponseDto } from './dto/registry-response.dto';
 import { RegistryEntry } from './entities/registry-entry.entity';
+import { Chore } from '../chores/entities/chore.entity';
+import { User } from '../users/entities/user.entity';
 
 @Injectable()
 export class RegistryService {
@@ -42,7 +44,15 @@ export class RegistryService {
       },
     );
 
-    return entries as RegistryResponseDto[];
+    // Enrich entries with denormalized data
+    return Promise.all(
+      entries.map((entry) =>
+        this.enrichRegistryEntry(
+          householdId,
+          entry as RegistryEntry & { id: string },
+        ),
+      ),
+    );
   }
 
   async create(
@@ -63,10 +73,13 @@ export class RegistryService {
       entryData,
     );
 
-    return {
+    const entry = {
       id: entryId,
       ...entryData,
     };
+
+    // Enrich with denormalized data
+    return this.enrichRegistryEntry(householdId, entry);
   }
 
   async createBatch(
@@ -81,6 +94,29 @@ export class RegistryService {
     }
 
     return results;
+  }
+
+  private async enrichRegistryEntry(
+    householdId: string,
+    entry: RegistryEntry & { id: string },
+  ): Promise<RegistryResponseDto> {
+    // Fetch chore to get the chore name
+    const chore = await this.firebaseService.getDocument<Chore>(
+      `households/${householdId}/chores/${entry.choreId}`,
+    );
+
+    // Fetch user from users collection to get display name
+    const users = await this.firebaseService.queryDocuments<User>(
+      'users',
+      (query) => query.where('uid', '==', entry.userId).limit(1),
+    );
+    const user = users.length > 0 ? users[0] : null;
+
+    return {
+      ...entry,
+      choreName: chore?.name || 'Unknown Chore',
+      userName: user?.displayName || 'Unknown User',
+    };
   }
 
   private getDateRange(

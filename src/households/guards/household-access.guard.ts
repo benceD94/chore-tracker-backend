@@ -36,7 +36,7 @@ export class HouseholdAccessGuard implements CanActivate {
     }
 
     // Check if user is a member of the household
-    if (!household.members.includes(user.uid)) {
+    if (!household.memberIds.includes(user.uid)) {
       throw new ForbiddenException('You do not have access to this household');
     }
 

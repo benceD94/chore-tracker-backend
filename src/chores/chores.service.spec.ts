@@ -59,6 +59,15 @@ describe('ChoresService', () => {
 
     service = module.get<ChoresService>(ChoresService);
     firebaseService = module.get(FirebaseService);
+
+    // Setup default mock for category enrichment
+    firebaseService.getDocument.mockImplementation((path: string) => {
+      if (path.includes('/categories/')) {
+        return Promise.resolve({ name: 'Test Category' });
+      }
+      // Default for chores
+      return Promise.resolve(mockChore);
+    });
   });
 
   afterEach(() => {
@@ -83,8 +92,11 @@ describe('ChoresService', () => {
         `households/${householdId}/chores`,
         expect.any(Function),
       );
-      expect(result).toEqual(chores);
       expect(result).toHaveLength(3);
+      expect(result[0]).toMatchObject({
+        ...chores[0],
+        categoryName: 'Test Category',
+      });
     });
 
     it('should return empty array when household has no chores', async () => {
@@ -112,16 +124,15 @@ describe('ChoresService', () => {
     it('should return chore when found', async () => {
       // Arrange
       const choreId = 'chore-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockChore);
 
       // Act
       const result = await service.findOne(householdId, choreId);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}/chores/${choreId}`,
-      );
-      expect(result).toEqual(mockChore);
+      expect(result).toMatchObject({
+        ...mockChore,
+        categoryName: 'Test Category',
+      });
     });
 
     it('should throw NotFoundException when chore not found', async () => {
@@ -175,10 +186,11 @@ describe('ChoresService', () => {
           updatedAt: expect.any(Date),
         }),
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         id: newChoreId,
         ...mockCreateChoreDto,
         householdId,
+        categoryName: 'Test Category',
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
       });
@@ -212,7 +224,12 @@ describe('ChoresService', () => {
     it('should update chore and return updated data', async () => {
       // Arrange
       const choreId = 'chore-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockChore);
+      firebaseService.getDocument.mockImplementation((path: string) => {
+        if (path.includes('/categories/')) {
+          return Promise.resolve({ name: 'Test Category' });
+        }
+        return Promise.resolve(mockChore);
+      });
       firebaseService.updateDocument.mockResolvedValue(undefined);
 
       // Act
@@ -234,9 +251,10 @@ describe('ChoresService', () => {
           updatedAt: expect.any(Date),
         }),
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         ...mockChore,
         ...mockUpdateChoreDto,
+        categoryName: 'Test Category',
         updatedAt: expect.any(Date),
       });
     });

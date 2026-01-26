@@ -16,6 +16,9 @@ export class ChoreResponseDto {
   @ApiProperty({ description: 'Category ID', required: false })
   categoryId?: string;
 
+  @ApiProperty({ description: 'Category name (denormalized)', required: false })
+  categoryName?: string;
+
   @ApiProperty({
     description: 'Array of user UIDs assigned to this chore',
     required: false,

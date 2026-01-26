@@ -9,30 +9,29 @@ export class UsersService {
   constructor(private readonly firebaseService: FirebaseService) {}
 
   async findByUid(uid: string): Promise<UserResponseDto> {
-    const users = await this.firebaseService.queryDocuments<User>(
-      'users',
-      (query) => query.where('uid', '==', uid).limit(1),
-    );
+    const user = await this.firebaseService.getDocument<User>(`users/${uid}`);
 
-    if (users.length === 0) {
+    if (!user) {
       throw new NotFoundException(`User with UID ${uid} not found`);
     }
 
-    return users[0] as UserResponseDto;
+    return user as UserResponseDto;
   }
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
+    const now = new Date();
+
     // Check if user already exists
     try {
       const existingUser = await this.findByUid(createUserDto.uid);
       // If user exists, update their data (upsert)
       const updatedData = {
         ...createUserDto,
-        updatedAt: new Date(),
+        updatedAt: now,
       };
 
       await this.firebaseService.updateDocument<User>(
-        `users/${existingUser.id}`,
+        `users/${createUserDto.uid}`,
         updatedData,
       );
 
@@ -42,21 +41,20 @@ export class UsersService {
       };
     } catch (error) {
       if (error instanceof NotFoundException) {
-        // Create new user
-        const now = new Date();
+        // Create new user with UID as document ID
         const userData = {
           ...createUserDto,
           createdAt: now,
           updatedAt: now,
         };
 
-        const userId = await this.firebaseService.createDocument<User>(
-          'users',
+        await this.firebaseService.updateDocument<User>(
+          `users/${createUserDto.uid}`,
           userData,
         );
 
         return {
-          id: userId,
+          id: createUserDto.uid,
           ...userData,
         };
       }

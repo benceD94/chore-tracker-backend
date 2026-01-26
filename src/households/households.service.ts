@@ -4,23 +4,53 @@ import {
   ConflictException,
 } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
+import { UsersService } from '../users/users.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { HouseholdResponseDto } from './dto/household-response.dto';
+import { UserResponseDto } from '../users/dto/user-response.dto';
 import { Household } from './entities/household.entity';
 
 @Injectable()
 export class HouseholdsService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(
+    private readonly firebaseService: FirebaseService,
+    private readonly usersService: UsersService,
+  ) {}
+
+  private async populateMemberDetails(
+    household: Household,
+  ): Promise<HouseholdResponseDto> {
+    const memberDetailsPromises = household.memberIds.map(async (uid) => {
+      try {
+        const user = await this.usersService.findByUid(uid);
+        return user;
+      } catch (error) {
+        console.warn(`User with UID ${uid} not found:`, error.message);
+        return null;
+      }
+    });
+
+    const memberDetails = (await Promise.all(memberDetailsPromises)).filter(
+      (member): member is UserResponseDto => member !== null,
+    );
+
+    return {
+      ...household,
+      memberDetails,
+    } as HouseholdResponseDto;
+  }
 
   async findAllByUser(userUid: string): Promise<HouseholdResponseDto[]> {
     const households = await this.firebaseService.queryDocuments<Household>(
       'households',
-      (query) => query.where('members', 'array-contains', userUid),
+      (query) => query.where('memberIds', 'array-contains', userUid),
     );
 
-    return households as HouseholdResponseDto[];
+    return Promise.all(
+      households.map((household) => this.populateMemberDetails(household)),
+    );
   }
 
   async findOne(householdId: string): Promise<HouseholdResponseDto> {
@@ -32,7 +62,7 @@ export class HouseholdsService {
       throw new NotFoundException(`Household with ID ${householdId} not found`);
     }
 
-    return household as HouseholdResponseDto;
+    return this.populateMemberDetails(household);
   }
 
   async create(
@@ -42,7 +72,7 @@ export class HouseholdsService {
     const now = new Date();
     const householdData = {
       ...createHouseholdDto,
-      members: [creatorUid],
+      memberIds: [creatorUid],
       createdBy: creatorUid,
       createdAt: now,
       updatedAt: now,
@@ -53,10 +83,12 @@ export class HouseholdsService {
       householdData,
     );
 
-    return {
+    const household: Household = {
       id: householdId,
       ...householdData,
     };
+
+    return this.populateMemberDetails(household);
   }
 
   async update(
@@ -75,10 +107,12 @@ export class HouseholdsService {
       updatedData,
     );
 
-    return {
+    const updatedHousehold: Household = {
       ...household,
       ...updatedData,
     };
+
+    return this.populateMemberDetails(updatedHousehold);
   }
 
   async addMember(
@@ -88,24 +122,27 @@ export class HouseholdsService {
     const household = await this.findOne(householdId);
 
     // Check if user is already a member
-    if (household.members.includes(addMemberDto.userId)) {
+    if (household.memberIds.includes(addMemberDto.userId)) {
       throw new ConflictException('User is already a member of this household');
     }
 
-    const updatedMembers = [...household.members, addMemberDto.userId];
+    const updatedMembers = [...household.memberIds, addMemberDto.userId];
+    const now = new Date();
 
     await this.firebaseService.updateDocument<Household>(
       `households/${householdId}`,
       {
-        members: updatedMembers,
-        updatedAt: new Date(),
+        memberIds: updatedMembers,
+        updatedAt: now,
       },
     );
 
-    return {
+    const updatedHousehold: Household = {
       ...household,
-      members: updatedMembers,
-      updatedAt: new Date(),
+      memberIds: updatedMembers,
+      updatedAt: now,
     };
+
+    return this.populateMemberDetails(updatedHousehold);
   }
 }

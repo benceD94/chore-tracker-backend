@@ -31,6 +31,7 @@ describe('RegistryService', () => {
     const mockFirebaseService = {
       queryDocuments: jest.fn(),
       createDocument: jest.fn(),
+      getDocument: jest.fn(),
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -45,6 +46,21 @@ describe('RegistryService', () => {
 
     service = module.get<RegistryService>(RegistryService);
     firebaseService = module.get(FirebaseService);
+
+    // Setup default mocks for enrichment
+    firebaseService.getDocument.mockImplementation((path: string) => {
+      if (path.includes('/chores/')) {
+        return Promise.resolve({ name: 'Test Chore' });
+      }
+      return Promise.resolve(null);
+    });
+
+    firebaseService.queryDocuments.mockImplementation((collection: string) => {
+      if (collection === 'users') {
+        return Promise.resolve([{ displayName: 'Test User' }]);
+      }
+      return Promise.resolve([]);
+    });
   });
 
   afterEach(() => {
@@ -61,7 +77,7 @@ describe('RegistryService', () => {
         mockRegistryEntry,
         { ...mockRegistryEntry, id: 'registry-id-456' },
       ];
-      firebaseService.queryDocuments.mockResolvedValue(entries);
+      firebaseService.queryDocuments.mockResolvedValueOnce(entries);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -71,8 +87,12 @@ describe('RegistryService', () => {
         `households/${householdId}/registry`,
         expect.any(Function),
       );
-      expect(result).toEqual(entries);
       expect(result).toHaveLength(2);
+      expect(result[0]).toEqual({
+        ...mockRegistryEntry,
+        choreName: 'Test Chore',
+        userName: 'Test User',
+      });
     });
 
     it('should filter entries by userId when specified', async () => {
@@ -82,14 +102,17 @@ describe('RegistryService', () => {
         userId: 'user-uid-1',
       };
       const entries = [mockRegistryEntry];
-      firebaseService.queryDocuments.mockResolvedValue(entries);
+      firebaseService.queryDocuments.mockResolvedValueOnce(entries);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual(entries);
+      expect(result[0]).toMatchObject({
+        choreName: 'Test Chore',
+        userName: 'Test User',
+      });
     });
 
     it('should use custom limit when specified', async () => {
@@ -126,14 +149,19 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.TODAY,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        userId: mockRegistryEntry.userId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should filter by YESTERDAY', async () => {
@@ -141,14 +169,19 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.YESTERDAY,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        userId: mockRegistryEntry.userId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should filter by THIS_WEEK', async () => {
@@ -156,14 +189,18 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_WEEK,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should filter by LAST_WEEK', async () => {
@@ -171,14 +208,18 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.LAST_WEEK,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should filter by THIS_MONTH', async () => {
@@ -186,14 +227,18 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_MONTH,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should combine date filter and user filter', async () => {
@@ -202,14 +247,19 @@ describe('RegistryService', () => {
         filter: RegistryFilter.TODAY,
         userId: 'user-uid-1',
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
       expect(firebaseService.queryDocuments).toHaveBeenCalled();
-      expect(result).toEqual([mockRegistryEntry]);
+      expect(result[0]).toMatchObject({
+        choreId: mockRegistryEntry.choreId,
+        userId: mockRegistryEntry.userId,
+        choreName: expect.any(String),
+        userName: expect.any(String),
+      });
     });
 
     it('should return empty array when no entries found', async () => {
@@ -266,12 +316,14 @@ describe('RegistryService', () => {
           createdAt: expect.any(Date),
         }),
       );
-      expect(result).toEqual({
+      expect(result).toMatchObject({
         id: newEntryId,
         choreId: dtoWithoutTimes.choreId,
         userId: dtoWithoutTimes.userId,
         householdId,
         times: 1,
+        choreName: expect.any(String),
+        userName: expect.any(String),
         completedAt: expect.any(Date),
         createdAt: expect.any(Date),
       });

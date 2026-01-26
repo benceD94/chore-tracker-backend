@@ -27,8 +27,7 @@ describe('UsersService', () => {
 
   beforeEach(async () => {
     const mockFirebaseService = {
-      queryDocuments: jest.fn(),
-      createDocument: jest.fn(),
+      getDocument: jest.fn(),
       updateDocument: jest.fn(),
     };
 
@@ -54,23 +53,20 @@ describe('UsersService', () => {
     it('should return user when found', async () => {
       // Arrange
       const uid = 'firebase-uid-123';
-      firebaseService.queryDocuments.mockResolvedValue([mockUser]);
+      firebaseService.getDocument.mockResolvedValue(mockUser);
 
       // Act
       const result = await service.findByUid(uid);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        'users',
-        expect.any(Function),
-      );
+      expect(firebaseService.getDocument).toHaveBeenCalledWith(`users/${uid}`);
       expect(result).toEqual(mockUser);
     });
 
     it('should throw NotFoundException when user not found', async () => {
       // Arrange
       const uid = 'non-existent-uid';
-      firebaseService.queryDocuments.mockResolvedValue([]);
+      firebaseService.getDocument.mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.findByUid(uid)).rejects.toThrow(NotFoundException);
@@ -79,25 +75,11 @@ describe('UsersService', () => {
       );
     });
 
-    it('should return first user when multiple users found', async () => {
+    it('should handle Firebase get errors', async () => {
       // Arrange
       const uid = 'firebase-uid-123';
-      const duplicateUsers = [mockUser, { ...mockUser, id: 'user-doc-id-456' }];
-      firebaseService.queryDocuments.mockResolvedValue(duplicateUsers);
-
-      // Act
-      const result = await service.findByUid(uid);
-
-      // Assert
-      expect(result).toEqual(mockUser);
-      expect(result.id).toBe('user-doc-id-123');
-    });
-
-    it('should handle Firebase query errors', async () => {
-      // Arrange
-      const uid = 'firebase-uid-123';
-      const error = new Error('Firebase query failed');
-      firebaseService.queryDocuments.mockRejectedValue(error);
+      const error = new Error('Firebase get failed');
+      firebaseService.getDocument.mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findByUid(uid)).rejects.toThrow(error);
@@ -107,20 +89,18 @@ describe('UsersService', () => {
   describe('create', () => {
     it('should create new user when user does not exist', async () => {
       // Arrange
-      const newUserId = 'new-user-doc-id';
-      firebaseService.queryDocuments.mockResolvedValue([]);
-      firebaseService.createDocument.mockResolvedValue(newUserId);
+      firebaseService.getDocument.mockResolvedValue(null);
+      firebaseService.updateDocument.mockResolvedValue(undefined);
 
       // Act
       const result = await service.create(mockCreateUserDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        'users',
-        expect.any(Function),
+      expect(firebaseService.getDocument).toHaveBeenCalledWith(
+        `users/${mockCreateUserDto.uid}`,
       );
-      expect(firebaseService.createDocument).toHaveBeenCalledWith(
-        'users',
+      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
+        `users/${mockCreateUserDto.uid}`,
         expect.objectContaining({
           uid: mockCreateUserDto.uid,
           email: mockCreateUserDto.email,
@@ -131,7 +111,7 @@ describe('UsersService', () => {
         }),
       );
       expect(result).toEqual({
-        id: newUserId,
+        id: mockCreateUserDto.uid,
         ...mockCreateUserDto,
         createdAt: expect.any(Date),
         updatedAt: expect.any(Date),
@@ -141,7 +121,7 @@ describe('UsersService', () => {
     it('should update existing user when user already exists (upsert)', async () => {
       // Arrange
       const existingUser = {
-        id: 'existing-user-doc-id',
+        id: mockCreateUserDto.uid,
         uid: mockCreateUserDto.uid,
         email: 'old@example.com',
         displayName: 'Old Name',
@@ -150,19 +130,18 @@ describe('UsersService', () => {
         updatedAt: new Date('2024-01-01'),
       };
 
-      firebaseService.queryDocuments.mockResolvedValue([existingUser]);
+      firebaseService.getDocument.mockResolvedValue(existingUser);
       firebaseService.updateDocument.mockResolvedValue(undefined);
 
       // Act
       const result = await service.create(mockCreateUserDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        'users',
-        expect.any(Function),
+      expect(firebaseService.getDocument).toHaveBeenCalledWith(
+        `users/${mockCreateUserDto.uid}`,
       );
       expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `users/${existingUser.id}`,
+        `users/${mockCreateUserDto.uid}`,
         expect.objectContaining({
           uid: mockCreateUserDto.uid,
           email: mockCreateUserDto.email,
@@ -171,7 +150,6 @@ describe('UsersService', () => {
           updatedAt: expect.any(Date),
         }),
       );
-      expect(firebaseService.createDocument).not.toHaveBeenCalled();
       expect(result).toEqual({
         ...existingUser,
         ...mockCreateUserDto,
@@ -183,7 +161,7 @@ describe('UsersService', () => {
       // Arrange
       const originalCreatedAt = new Date('2024-01-01');
       const existingUser = {
-        id: 'existing-user-doc-id',
+        id: mockCreateUserDto.uid,
         uid: mockCreateUserDto.uid,
         email: 'old@example.com',
         displayName: 'Old Name',
@@ -191,7 +169,7 @@ describe('UsersService', () => {
         updatedAt: new Date('2024-01-01'),
       };
 
-      firebaseService.queryDocuments.mockResolvedValue([existingUser]);
+      firebaseService.getDocument.mockResolvedValue(existingUser);
       firebaseService.updateDocument.mockResolvedValue(undefined);
 
       // Act
@@ -201,11 +179,11 @@ describe('UsersService', () => {
       expect(result.createdAt).toEqual(originalCreatedAt);
     });
 
-    it('should throw error when Firebase create fails', async () => {
+    it('should throw error when Firebase update fails during create', async () => {
       // Arrange
-      const error = new Error('Firebase create failed');
-      firebaseService.queryDocuments.mockResolvedValue([]);
-      firebaseService.createDocument.mockRejectedValue(error);
+      const error = new Error('Firebase update failed');
+      firebaseService.getDocument.mockResolvedValue(null);
+      firebaseService.updateDocument.mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.create(mockCreateUserDto)).rejects.toThrow(error);
@@ -213,9 +191,15 @@ describe('UsersService', () => {
 
     it('should throw error when Firebase update fails during upsert', async () => {
       // Arrange
-      const existingUser = { ...mockUser, uid: mockCreateUserDto.uid };
+      const existingUser = {
+        id: mockCreateUserDto.uid,
+        uid: mockCreateUserDto.uid,
+        email: 'old@example.com',
+        createdAt: new Date('2024-01-01'),
+        updatedAt: new Date('2024-01-01'),
+      };
       const error = new Error('Firebase update failed');
-      firebaseService.queryDocuments.mockResolvedValue([existingUser]);
+      firebaseService.getDocument.mockResolvedValue(existingUser);
       firebaseService.updateDocument.mockRejectedValue(error);
 
       // Act & Assert
@@ -225,11 +209,10 @@ describe('UsersService', () => {
     it('should rethrow non-NotFoundException errors from findByUid', async () => {
       // Arrange
       const error = new Error('Unexpected Firebase error');
-      firebaseService.queryDocuments.mockRejectedValue(error);
+      firebaseService.getDocument.mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.create(mockCreateUserDto)).rejects.toThrow(error);
-      expect(firebaseService.createDocument).not.toHaveBeenCalled();
       expect(firebaseService.updateDocument).not.toHaveBeenCalled();
     });
   });
