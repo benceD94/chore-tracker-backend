@@ -82,10 +82,7 @@ describe('UsersService', () => {
     it('should return first user when multiple users found', async () => {
       // Arrange
       const uid = 'firebase-uid-123';
-      const duplicateUsers = [
-        mockUser,
-        { ...mockUser, id: 'user-doc-id-456' },
-      ];
+      const duplicateUsers = [mockUser, { ...mockUser, id: 'user-doc-id-456' }];
       firebaseService.queryDocuments.mockResolvedValue(duplicateUsers);
 
       // Act

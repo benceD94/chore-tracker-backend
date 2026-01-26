@@ -387,9 +387,9 @@ describe('RegistryService', () => {
         .mockRejectedValueOnce(error);
 
       // Act & Assert
-      await expect(
-        service.createBatch(householdId, batchDto),
-      ).rejects.toThrow(error);
+      await expect(service.createBatch(householdId, batchDto)).rejects.toThrow(
+        error,
+      );
       expect(firebaseService.createDocument).toHaveBeenCalledTimes(2);
     });
 

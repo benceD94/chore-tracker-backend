@@ -57,7 +57,7 @@ export class AuthController {
     status: 200,
     description: 'Logout successful',
   })
-  async logout(): Promise<{ message: string }> {
+  logout(): { message: string } {
     return this.authService.logout();
   }
 

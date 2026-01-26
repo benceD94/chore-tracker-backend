@@ -80,7 +80,10 @@ export class FirebaseService implements OnModuleInit {
   ): Promise<string> {
     try {
       if (docId) {
-        await this.firestore.collection(collectionPath).doc(docId).set(data as any);
+        await this.firestore
+          .collection(collectionPath)
+          .doc(docId)
+          .set(data as any);
         return docId;
       } else {
         const docRef = await this.firestore

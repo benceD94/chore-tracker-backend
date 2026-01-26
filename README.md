@@ -212,7 +212,7 @@ Runs automatically on every pull request and push to `main`/`develop` branches:
 Automated security scanning:
 
 - 🔍 **NPM Audit** - Checks for known vulnerabilities in dependencies
-- 📦 **Dependency Review** - Reviews dependencies in pull requests
+- 🛡️ **OSV Scanner** - Google's Open Source Vulnerability scanner for dependency vulnerabilities
 - 🔐 **CodeQL Analysis** - Static code analysis for security issues
 - ⏰ **Daily Scans** - Runs security audit daily at 00:00 UTC
 

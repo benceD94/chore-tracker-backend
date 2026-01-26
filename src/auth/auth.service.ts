@@ -1,3 +1,4 @@
+/* eslint-disable @typescript-eslint/no-unsafe-assignment */
 import { Injectable } from '@nestjs/common';
 import { FirebaseService } from '../firebase/firebase.service';
 import { AuthResponseDto } from './dto/auth-response.dto';
@@ -12,7 +13,7 @@ export class AuthService {
     return {
       uid: decodedToken.uid,
       email: decodedToken.email,
-      emailVerified: decodedToken.email_verified,
+      emailVerified: decodedToken.email_verified ?? false,
       displayName: decodedToken.name,
       photoURL: decodedToken.picture,
       phoneNumber: decodedToken.phone_number,

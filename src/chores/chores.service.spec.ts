@@ -329,9 +329,7 @@ describe('ChoresService', () => {
       firebaseService.deleteDocument.mockRejectedValue(error);
 
       // Act & Assert
-      await expect(service.remove(householdId, choreId)).rejects.toThrow(
-        error,
-      );
+      await expect(service.remove(householdId, choreId)).rejects.toThrow(error);
     });
 
     it('should verify chore exists before attempting delete', async () => {
