@@ -101,21 +101,37 @@ export class ChoresService {
 
   private async enrichChore(
     householdId: string,
-    chore: Chore & { id?: string },
+    chore: Chore & { id?: string; categoryRef?: any },
   ): Promise<ChoreResponseDto> {
     let categoryName: string | undefined;
+    let categoryId: string | undefined;
 
-    // Fetch category name if categoryId exists
-    if (chore.categoryId) {
-      const category = await this.firebaseService.getDocument<Category>(
-        `households/${householdId}/categories/${chore.categoryId}`,
-      );
-      categoryName = category?.name;
+    // Handle both categoryId (string) and categoryRef (DocumentReference)
+    const categoryReference = (chore as any).categoryRef || chore.categoryId;
+
+    if (categoryReference) {
+      // Check if it's a Firestore DocumentReference
+      if (typeof categoryReference === 'object' && categoryReference.id) {
+        // It's a DocumentReference - extract the ID
+        categoryId = categoryReference.id;
+      } else if (typeof categoryReference === 'string') {
+        // It's already a string ID
+        categoryId = categoryReference;
+      }
+
+      // Fetch category name if we have an ID
+      if (categoryId) {
+        const category = await this.firebaseService.getDocument<Category>(
+          `households/${householdId}/categories/${categoryId}`,
+        );
+        categoryName = category?.name;
+      }
     }
 
     return {
       ...chore,
       id: chore.id!,
+      categoryId,
       categoryName,
     };
   }

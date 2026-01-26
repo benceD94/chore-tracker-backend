@@ -105,15 +105,14 @@ export class RegistryService {
       `households/${householdId}/chores/${entry.choreId}`,
     );
 
-    // Fetch user from users collection to get display name
-    const users = await this.firebaseService.queryDocuments<User>(
-      'users',
-      (query) => query.where('uid', '==', entry.userId).limit(1),
+    // Fetch user from users collection to get display name (using UID as document ID)
+    const user = await this.firebaseService.getDocument<User>(
+      `users/${entry.userId}`,
     );
-    const user = users.length > 0 ? users[0] : null;
 
     return {
       ...entry,
+      points: chore?.points || 0,
       choreName: chore?.name || 'Unknown Chore',
       userName: user?.displayName || 'Unknown User',
     };

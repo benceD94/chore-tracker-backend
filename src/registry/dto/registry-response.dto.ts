@@ -27,4 +27,7 @@ export class RegistryResponseDto {
 
   @ApiProperty({ description: 'Creation timestamp' })
   createdAt: Date;
+
+  @ApiProperty({ description: 'Point worth of the chore' })
+  points: number;
 }

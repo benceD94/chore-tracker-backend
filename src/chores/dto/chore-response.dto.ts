@@ -30,4 +30,7 @@ export class ChoreResponseDto {
 
   @ApiProperty({ description: 'Last update timestamp' })
   updatedAt: Date;
+
+  @ApiProperty({ description: 'Point worth of the chore' })
+  points: number;
 }

@@ -50,16 +50,12 @@ describe('RegistryService', () => {
     // Setup default mocks for enrichment
     firebaseService.getDocument.mockImplementation((path: string) => {
       if (path.includes('/chores/')) {
-        return Promise.resolve({ name: 'Test Chore' });
+        return Promise.resolve({ name: 'Test Chore', points: 0 });
+      }
+      if (path.startsWith('users/')) {
+        return Promise.resolve({ displayName: 'Test User' });
       }
       return Promise.resolve(null);
-    });
-
-    firebaseService.queryDocuments.mockImplementation((collection: string) => {
-      if (collection === 'users') {
-        return Promise.resolve([{ displayName: 'Test User' }]);
-      }
-      return Promise.resolve([]);
     });
   });
 
@@ -90,6 +86,7 @@ describe('RegistryService', () => {
       expect(result).toHaveLength(2);
       expect(result[0]).toEqual({
         ...mockRegistryEntry,
+        points: 0,
         choreName: 'Test Chore',
         userName: 'Test User',
       });
