@@ -37,18 +37,21 @@ jobs:
   osv-scanner:
     name: OSV Vulnerability Scanner
     runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      security-events: write
 
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
 
-      - name: Run OSV Scanner
-        uses: google/osv-scanner-action@v2.3.2
+      - name: Setup Go
+        uses: actions/setup-go@v5
         with:
-          to-scan: ./
+          go-version: '1.22'
+
+      - name: Install OSV Scanner
+        run: go install github.com/google/osv-scanner/cmd/osv-scanner@latest
+
+      - name: Run OSV Scanner
+        run: osv-scanner --lockfile=package-lock.json
         continue-on-error: true
 
   codeql-analysis:
