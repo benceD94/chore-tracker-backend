@@ -21,6 +21,7 @@
     "swagger:generate": "ts-node -r tsconfig-paths/register scripts/generate-swagger.ts",
     "prisma:generate": "prisma generate",
     "prisma:migrate": "prisma migrate deploy",
+    "prisma:push": "prisma db push --accept-data-loss",
     "postinstall": "prisma generate"
   },
   "dependencies": {
