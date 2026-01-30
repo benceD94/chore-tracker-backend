@@ -16,6 +16,20 @@ When the project reaches production-ready status, it will be released as version
 
 ---
 
+## [0.1.2] - 2026-01-30
+
+### Fixed
+- Foreign key constraint error when creating households
+  - Auth service now automatically creates/updates users in PostgreSQL on login
+  - Fixes "Foreign key constraint violated: `households_createdBy_fkey`" error
+  - Users are properly synced between Firebase Authentication and PostgreSQL database
+
+### Changed
+- `AuthService` now depends on `UsersService` to sync users to database
+- `AuthModule` now imports `UsersModule`
+
+---
+
 ## [0.1.1] - 2026-01-30
 
 ### Fixed

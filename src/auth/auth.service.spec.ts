@@ -1,11 +1,12 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { AuthService } from './auth.service';
 import { FirebaseService } from '../firebase/firebase.service';
-import { UnauthorizedException } from '@nestjs/common';
+import { UsersService } from '../users/users.service';
 
 describe('AuthService', () => {
   let service: AuthService;
   let firebaseService: jest.Mocked<FirebaseService>;
+  let usersService: jest.Mocked<UsersService>;
 
   const mockDecodedToken = {
     uid: 'test-uid-123',
@@ -49,6 +50,11 @@ describe('AuthService', () => {
       getUserByUid: jest.fn(),
     };
 
+    const mockUsersService = {
+      create: jest.fn(),
+      findByUid: jest.fn(),
+    };
+
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         AuthService,
@@ -56,11 +62,16 @@ describe('AuthService', () => {
           provide: FirebaseService,
           useValue: mockFirebaseService,
         },
+        {
+          provide: UsersService,
+          useValue: mockUsersService,
+        },
       ],
     }).compile();
 
     service = module.get<AuthService>(AuthService);
     firebaseService = module.get(FirebaseService);
+    usersService = module.get(UsersService);
   });
 
   afterEach(() => {
@@ -72,6 +83,7 @@ describe('AuthService', () => {
       // Arrange
       const idToken = 'valid-firebase-token';
       firebaseService.verifyIdToken.mockResolvedValue(mockDecodedToken);
+      usersService.create.mockResolvedValue({} as any);
 
       // Act
       const result = await service.validateToken(idToken);
@@ -79,6 +91,12 @@ describe('AuthService', () => {
       // Assert
       expect(firebaseService.verifyIdToken).toHaveBeenCalledWith(idToken);
       expect(firebaseService.verifyIdToken).toHaveBeenCalledTimes(1);
+      expect(usersService.create).toHaveBeenCalledWith({
+        uid: 'test-uid-123',
+        email: 'test@example.com',
+        displayName: 'Test User',
+        photoURL: 'https://example.com/photo.jpg',
+      });
       expect(result).toEqual({
         uid: 'test-uid-123',
         email: 'test@example.com',
@@ -101,11 +119,18 @@ describe('AuthService', () => {
         phone_number: undefined,
       };
       firebaseService.verifyIdToken.mockResolvedValue(minimalDecodedToken);
+      usersService.create.mockResolvedValue({} as any);
 
       // Act
       const result = await service.validateToken(idToken);
 
       // Assert
+      expect(usersService.create).toHaveBeenCalledWith({
+        uid: 'test-uid-123',
+        email: undefined,
+        displayName: undefined,
+        photoURL: undefined,
+      });
       expect(result).toEqual({
         uid: 'test-uid-123',
         email: undefined,

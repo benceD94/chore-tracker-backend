@@ -1,6 +1,6 @@
 {
   "name": "chore-tracker-backend",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "Chore tracking API with PostgreSQL and Prisma ORM",
   "author": "",
   "private": true,
