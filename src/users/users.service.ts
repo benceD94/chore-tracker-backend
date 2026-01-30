@@ -1,64 +1,56 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateUserDto } from './dto/create-user.dto';
 import { UserResponseDto } from './dto/user-response.dto';
-import { User } from './entities/user.entity';
 
 @Injectable()
 export class UsersService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findByUid(uid: string): Promise<UserResponseDto> {
-    const user = await this.firebaseService.getDocument<User>(`users/${uid}`);
+    const user = await this.prisma.user.findUnique({
+      where: { uid },
+    });
 
     if (!user) {
       throw new NotFoundException(`User with UID ${uid} not found`);
     }
 
-    return user as UserResponseDto;
+    return {
+      id: user.uid,
+      uid: user.uid,
+      email: user.email ?? undefined,
+      displayName: user.displayName ?? undefined,
+      photoURL: user.photoURL ?? undefined,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 
   async create(createUserDto: CreateUserDto): Promise<UserResponseDto> {
-    const now = new Date();
+    const user = await this.prisma.user.upsert({
+      where: { uid: createUserDto.uid },
+      update: {
+        email: createUserDto.email,
+        displayName: createUserDto.displayName,
+        photoURL: createUserDto.photoURL,
+      },
+      create: {
+        uid: createUserDto.uid,
+        email: createUserDto.email,
+        displayName: createUserDto.displayName,
+        photoURL: createUserDto.photoURL,
+      },
+    });
 
-    // Check if user already exists
-    try {
-      const existingUser = await this.findByUid(createUserDto.uid);
-      // If user exists, update their data (upsert)
-      const updatedData = {
-        ...createUserDto,
-        updatedAt: now,
-      };
-
-      await this.firebaseService.updateDocument<User>(
-        `users/${createUserDto.uid}`,
-        updatedData,
-      );
-
-      return {
-        ...existingUser,
-        ...updatedData,
-      };
-    } catch (error) {
-      if (error instanceof NotFoundException) {
-        // Create new user with UID as document ID
-        const userData = {
-          ...createUserDto,
-          createdAt: now,
-          updatedAt: now,
-        };
-
-        await this.firebaseService.updateDocument<User>(
-          `users/${createUserDto.uid}`,
-          userData,
-        );
-
-        return {
-          id: createUserDto.uid,
-          ...userData,
-        };
-      }
-      throw error;
-    }
+    return {
+      id: user.uid,
+      uid: user.uid,
+      email: user.email ?? undefined,
+      displayName: user.displayName ?? undefined,
+      photoURL: user.photoURL ?? undefined,
+      createdAt: user.createdAt,
+      updatedAt: user.updatedAt,
+    };
   }
 }

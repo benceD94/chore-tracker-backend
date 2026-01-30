@@ -13,7 +13,7 @@ export class HouseholdResponseDto {
 
   @ApiProperty({
     description: 'Array of member details populated from memberIds',
-    type: [UserResponseDto]
+    type: [UserResponseDto],
   })
   memberDetails: UserResponseDto[];
 

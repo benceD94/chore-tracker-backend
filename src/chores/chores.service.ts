@@ -1,67 +1,119 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateChoreDto } from './dto/create-chore.dto';
 import { UpdateChoreDto } from './dto/update-chore.dto';
 import { ChoreResponseDto } from './dto/chore-response.dto';
-import { Chore } from './entities/chore.entity';
-import { Category } from '../categories/entities/category.entity';
 
 @Injectable()
 export class ChoresService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll(householdId: string): Promise<ChoreResponseDto[]> {
-    const chores = await this.firebaseService.queryDocuments<Chore>(
-      `households/${householdId}/chores`,
-      (query) => query.orderBy('name', 'asc'),
-    );
+    const chores = await this.prisma.chore.findMany({
+      where: { householdId },
+      include: {
+        category: true,
+        assignments: {
+          include: {
+            user: true,
+          },
+        },
+      },
+      orderBy: { name: 'asc' },
+    });
 
-    // Enrich chores with category names
-    return Promise.all(
-      chores.map((chore) => this.enrichChore(householdId, chore)),
-    );
+    return chores.map((chore) => ({
+      id: chore.id,
+      householdId: chore.householdId,
+      name: chore.name,
+      description: chore.description ?? undefined,
+      points: chore.points,
+      categoryId: chore.categoryId ?? undefined,
+      categoryName: chore.category?.name,
+      assignedTo: chore.assignments.map((a) => a.userId),
+      createdAt: chore.createdAt,
+      updatedAt: chore.updatedAt,
+    }));
   }
 
   async findOne(
     householdId: string,
     choreId: string,
   ): Promise<ChoreResponseDto> {
-    const chore = await this.firebaseService.getDocument<Chore>(
-      `households/${householdId}/chores/${choreId}`,
-    );
+    const chore = await this.prisma.chore.findFirst({
+      where: {
+        id: choreId,
+        householdId,
+      },
+      include: {
+        category: true,
+        assignments: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
 
     if (!chore) {
       throw new NotFoundException(`Chore with ID ${choreId} not found`);
     }
 
-    // Enrich with category name
-    return this.enrichChore(householdId, chore);
+    return {
+      id: chore.id,
+      householdId: chore.householdId,
+      name: chore.name,
+      description: chore.description ?? undefined,
+      points: chore.points,
+      categoryId: chore.categoryId ?? undefined,
+      categoryName: chore.category?.name,
+      assignedTo: chore.assignments.map((a) => a.userId),
+      createdAt: chore.createdAt,
+      updatedAt: chore.updatedAt,
+    };
   }
 
   async create(
     householdId: string,
     createChoreDto: CreateChoreDto,
   ): Promise<ChoreResponseDto> {
-    const now = new Date();
-    const choreData = {
-      ...createChoreDto,
-      householdId,
-      createdAt: now,
-      updatedAt: now,
+    const chore = await this.prisma.chore.create({
+      data: {
+        householdId,
+        name: createChoreDto.name,
+        description: createChoreDto.description,
+        points: createChoreDto.points,
+        categoryId: createChoreDto.categoryId,
+        assignments: createChoreDto.assignedTo
+          ? {
+              create: createChoreDto.assignedTo.map((userId) => ({
+                userId,
+              })),
+            }
+          : undefined,
+      },
+      include: {
+        category: true,
+        assignments: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    return {
+      id: chore.id,
+      householdId: chore.householdId,
+      name: chore.name,
+      description: chore.description ?? undefined,
+      points: chore.points,
+      categoryId: chore.categoryId ?? undefined,
+      categoryName: chore.category?.name,
+      assignedTo: chore.assignments.map((a) => a.userId),
+      createdAt: chore.createdAt,
+      updatedAt: chore.updatedAt,
     };
-
-    const choreId = await this.firebaseService.createDocument<Chore>(
-      `households/${householdId}/chores`,
-      choreData,
-    );
-
-    const chore = {
-      id: choreId,
-      ...choreData,
-    };
-
-    // Enrich with category name
-    return this.enrichChore(householdId, chore);
   }
 
   async update(
@@ -69,70 +121,66 @@ export class ChoresService {
     choreId: string,
     updateChoreDto: UpdateChoreDto,
   ): Promise<ChoreResponseDto> {
-    const chore = await this.findOne(householdId, choreId);
-
-    const updatedData = {
-      ...updateChoreDto,
-      updatedAt: new Date(),
-    };
-
-    await this.firebaseService.updateDocument<Chore>(
-      `households/${householdId}/chores/${choreId}`,
-      updatedData,
-    );
-
-    const updatedChore = {
-      ...chore,
-      ...updatedData,
-    };
-
-    // Enrich with category name
-    return this.enrichChore(householdId, updatedChore);
-  }
-
-  async remove(householdId: string, choreId: string): Promise<void> {
-    // Verify chore exists first
+    // Verify chore exists and belongs to household
     await this.findOne(householdId, choreId);
 
-    await this.firebaseService.deleteDocument(
-      `households/${householdId}/chores/${choreId}`,
-    );
-  }
+    // Update chore assignments if provided
+    if (updateChoreDto.assignedTo !== undefined) {
+      // Delete existing assignments
+      await this.prisma.choreAssignment.deleteMany({
+        where: { choreId },
+      });
 
-  private async enrichChore(
-    householdId: string,
-    chore: Chore & { id?: string; categoryRef?: any },
-  ): Promise<ChoreResponseDto> {
-    let categoryName: string | undefined;
-    let categoryId: string | undefined;
-
-    // Handle both categoryId (string) and categoryRef (DocumentReference)
-    const categoryReference = (chore as any).categoryRef || chore.categoryId;
-
-    if (categoryReference) {
-      // Check if it's a Firestore DocumentReference
-      if (typeof categoryReference === 'object' && categoryReference.id) {
-        // It's a DocumentReference - extract the ID
-        categoryId = categoryReference.id;
-      } else if (typeof categoryReference === 'string') {
-        // It's already a string ID
-        categoryId = categoryReference;
-      }
-
-      // Fetch category name if we have an ID
-      if (categoryId) {
-        const category = await this.firebaseService.getDocument<Category>(
-          `households/${householdId}/categories/${categoryId}`,
-        );
-        categoryName = category?.name;
+      // Create new assignments
+      if (updateChoreDto.assignedTo.length > 0) {
+        await this.prisma.choreAssignment.createMany({
+          data: updateChoreDto.assignedTo.map((userId) => ({
+            choreId,
+            userId,
+          })),
+        });
       }
     }
 
+    // Update the chore itself
+    const chore = await this.prisma.chore.update({
+      where: { id: choreId },
+      data: {
+        name: updateChoreDto.name,
+        description: updateChoreDto.description,
+        categoryId: updateChoreDto.categoryId,
+      },
+      include: {
+        category: true,
+        assignments: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
     return {
-      ...chore,
-      id: chore.id!,
-      categoryId,
-      categoryName,
+      id: chore.id,
+      householdId: chore.householdId,
+      name: chore.name,
+      description: chore.description ?? undefined,
+      points: chore.points,
+      categoryId: chore.categoryId ?? undefined,
+      categoryName: chore.category?.name,
+      assignedTo: chore.assignments.map((a) => a.userId),
+      createdAt: chore.createdAt,
+      updatedAt: chore.updatedAt,
     };
+  }
+
+  async remove(householdId: string, choreId: string): Promise<void> {
+    // Verify chore exists and belongs to household
+    await this.findOne(householdId, choreId);
+
+    // Delete the chore (assignments will cascade)
+    await this.prisma.chore.delete({
+      where: { id: choreId },
+    });
   }
 }

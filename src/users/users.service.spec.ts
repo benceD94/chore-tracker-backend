@@ -1,15 +1,14 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { UsersService } from './users.service';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
 import { CreateUserDto } from './dto/create-user.dto';
 
 describe('UsersService', () => {
   let service: UsersService;
-  let firebaseService: jest.Mocked<FirebaseService>;
+  let prisma: jest.Mocked<PrismaService>;
 
   const mockUser = {
-    id: 'user-doc-id-123',
     uid: 'firebase-uid-123',
     email: 'test@example.com',
     displayName: 'Test User',
@@ -26,23 +25,25 @@ describe('UsersService', () => {
   };
 
   beforeEach(async () => {
-    const mockFirebaseService = {
-      getDocument: jest.fn(),
-      updateDocument: jest.fn(),
+    const mockPrismaService = {
+      user: {
+        findUnique: jest.fn(),
+        upsert: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         UsersService,
         {
-          provide: FirebaseService,
-          useValue: mockFirebaseService,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
 
     service = module.get<UsersService>(UsersService);
-    firebaseService = module.get(FirebaseService);
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -53,20 +54,30 @@ describe('UsersService', () => {
     it('should return user when found', async () => {
       // Arrange
       const uid = 'firebase-uid-123';
-      firebaseService.getDocument.mockResolvedValue(mockUser);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(mockUser);
 
       // Act
       const result = await service.findByUid(uid);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(`users/${uid}`);
-      expect(result).toEqual(mockUser);
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { uid },
+      });
+      expect(result).toEqual({
+        id: mockUser.uid,
+        uid: mockUser.uid,
+        email: mockUser.email,
+        displayName: mockUser.displayName,
+        photoURL: mockUser.photoURL,
+        createdAt: mockUser.createdAt,
+        updatedAt: mockUser.updatedAt,
+      });
     });
 
     it('should throw NotFoundException when user not found', async () => {
       // Arrange
       const uid = 'non-existent-uid';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.user.findUnique as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.findByUid(uid)).rejects.toThrow(NotFoundException);
@@ -75,11 +86,11 @@ describe('UsersService', () => {
       );
     });
 
-    it('should handle Firebase get errors', async () => {
+    it('should handle database errors', async () => {
       // Arrange
       const uid = 'firebase-uid-123';
-      const error = new Error('Firebase get failed');
-      firebaseService.getDocument.mockRejectedValue(error);
+      const error = new Error('Database error');
+      (prisma.user.findUnique as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findByUid(uid)).rejects.toThrow(error);
@@ -89,27 +100,34 @@ describe('UsersService', () => {
   describe('create', () => {
     it('should create new user when user does not exist', async () => {
       // Arrange
-      firebaseService.getDocument.mockResolvedValue(null);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
+      const newUser = {
+        uid: mockCreateUserDto.uid,
+        email: mockCreateUserDto.email,
+        displayName: mockCreateUserDto.displayName,
+        photoURL: mockCreateUserDto.photoURL,
+        createdAt: expect.any(Date),
+        updatedAt: expect.any(Date),
+      };
+      (prisma.user.upsert as jest.Mock).mockResolvedValue(newUser);
 
       // Act
       const result = await service.create(mockCreateUserDto);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `users/${mockCreateUserDto.uid}`,
-      );
-      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `users/${mockCreateUserDto.uid}`,
-        expect.objectContaining({
+      expect(prisma.user.upsert).toHaveBeenCalledWith({
+        where: { uid: mockCreateUserDto.uid },
+        update: {
+          email: mockCreateUserDto.email,
+          displayName: mockCreateUserDto.displayName,
+          photoURL: mockCreateUserDto.photoURL,
+        },
+        create: {
           uid: mockCreateUserDto.uid,
           email: mockCreateUserDto.email,
           displayName: mockCreateUserDto.displayName,
           photoURL: mockCreateUserDto.photoURL,
-          createdAt: expect.any(Date),
-          updatedAt: expect.any(Date),
-        }),
-      );
+        },
+      });
       expect(result).toEqual({
         id: mockCreateUserDto.uid,
         ...mockCreateUserDto,
@@ -121,39 +139,25 @@ describe('UsersService', () => {
     it('should update existing user when user already exists (upsert)', async () => {
       // Arrange
       const existingUser = {
-        id: mockCreateUserDto.uid,
         uid: mockCreateUserDto.uid,
-        email: 'old@example.com',
-        displayName: 'Old Name',
-        photoURL: 'https://example.com/old-photo.jpg',
+        email: mockCreateUserDto.email,
+        displayName: mockCreateUserDto.displayName,
+        photoURL: mockCreateUserDto.photoURL,
         createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
       };
-
-      firebaseService.getDocument.mockResolvedValue(existingUser);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
+      (prisma.user.upsert as jest.Mock).mockResolvedValue(existingUser);
 
       // Act
       const result = await service.create(mockCreateUserDto);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `users/${mockCreateUserDto.uid}`,
-      );
-      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `users/${mockCreateUserDto.uid}`,
-        expect.objectContaining({
-          uid: mockCreateUserDto.uid,
-          email: mockCreateUserDto.email,
-          displayName: mockCreateUserDto.displayName,
-          photoURL: mockCreateUserDto.photoURL,
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result).toEqual({
-        ...existingUser,
-        ...mockCreateUserDto,
-        updatedAt: expect.any(Date),
+      expect(prisma.user.upsert).toHaveBeenCalled();
+      expect(result).toMatchObject({
+        uid: mockCreateUserDto.uid,
+        email: mockCreateUserDto.email,
+        displayName: mockCreateUserDto.displayName,
+        photoURL: mockCreateUserDto.photoURL,
       });
     });
 
@@ -161,16 +165,14 @@ describe('UsersService', () => {
       // Arrange
       const originalCreatedAt = new Date('2024-01-01');
       const existingUser = {
-        id: mockCreateUserDto.uid,
         uid: mockCreateUserDto.uid,
-        email: 'old@example.com',
-        displayName: 'Old Name',
+        email: mockCreateUserDto.email,
+        displayName: mockCreateUserDto.displayName,
+        photoURL: mockCreateUserDto.photoURL,
         createdAt: originalCreatedAt,
-        updatedAt: new Date('2024-01-01'),
+        updatedAt: new Date(),
       };
-
-      firebaseService.getDocument.mockResolvedValue(existingUser);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
+      (prisma.user.upsert as jest.Mock).mockResolvedValue(existingUser);
 
       // Act
       const result = await service.create(mockCreateUserDto);
@@ -179,41 +181,13 @@ describe('UsersService', () => {
       expect(result.createdAt).toEqual(originalCreatedAt);
     });
 
-    it('should throw error when Firebase update fails during create', async () => {
+    it('should handle database errors during upsert', async () => {
       // Arrange
-      const error = new Error('Firebase update failed');
-      firebaseService.getDocument.mockResolvedValue(null);
-      firebaseService.updateDocument.mockRejectedValue(error);
+      const error = new Error('Database upsert failed');
+      (prisma.user.upsert as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.create(mockCreateUserDto)).rejects.toThrow(error);
-    });
-
-    it('should throw error when Firebase update fails during upsert', async () => {
-      // Arrange
-      const existingUser = {
-        id: mockCreateUserDto.uid,
-        uid: mockCreateUserDto.uid,
-        email: 'old@example.com',
-        createdAt: new Date('2024-01-01'),
-        updatedAt: new Date('2024-01-01'),
-      };
-      const error = new Error('Firebase update failed');
-      firebaseService.getDocument.mockResolvedValue(existingUser);
-      firebaseService.updateDocument.mockRejectedValue(error);
-
-      // Act & Assert
-      await expect(service.create(mockCreateUserDto)).rejects.toThrow(error);
-    });
-
-    it('should rethrow non-NotFoundException errors from findByUid', async () => {
-      // Arrange
-      const error = new Error('Unexpected Firebase error');
-      firebaseService.getDocument.mockRejectedValue(error);
-
-      // Act & Assert
-      await expect(service.create(mockCreateUserDto)).rejects.toThrow(error);
-      expect(firebaseService.updateDocument).not.toHaveBeenCalled();
     });
   });
 });

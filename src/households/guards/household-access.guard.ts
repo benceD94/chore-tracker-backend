@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import {
   Injectable,
   CanActivate,
@@ -6,12 +6,11 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common';
-import { FirebaseService } from '../../firebase/firebase.service';
-import { Household } from '../entities/household.entity';
+import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class HouseholdAccessGuard implements CanActivate {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const request = context.switchToHttp().getRequest();
@@ -26,22 +25,36 @@ export class HouseholdAccessGuard implements CanActivate {
       throw new ForbiddenException('Household ID is required');
     }
 
-    // Fetch the household from Firestore
-    const household = await this.firebaseService.getDocument<Household>(
-      `households/${householdId}`,
-    );
-
-    if (!household) {
-      throw new NotFoundException(`Household with ID ${householdId} not found`);
-    }
-
     // Check if user is a member of the household
-    if (!household.memberIds.includes(user.uid)) {
+    const membership = await this.prisma.householdMember.findUnique({
+      where: {
+        userId_householdId: {
+          userId: user.uid,
+          householdId,
+        },
+      },
+      include: {
+        household: true,
+      },
+    });
+
+    if (!membership) {
+      // Check if household exists to provide better error message
+      const household = await this.prisma.household.findUnique({
+        where: { id: householdId },
+      });
+
+      if (!household) {
+        throw new NotFoundException(
+          `Household with ID ${householdId} not found`,
+        );
+      }
+
       throw new ForbiddenException('You do not have access to this household');
     }
 
     // Attach household to request for use in controllers
-    request.household = household;
+    request.household = membership.household;
 
     return true;
   }

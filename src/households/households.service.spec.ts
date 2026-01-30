@@ -1,7 +1,6 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { HouseholdsService } from './households.service';
-import { FirebaseService } from '../firebase/firebase.service';
-import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException, ConflictException } from '@nestjs/common';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
@@ -9,11 +8,9 @@ import { AddMemberDto } from './dto/add-member.dto';
 
 describe('HouseholdsService', () => {
   let service: HouseholdsService;
-  let firebaseService: jest.Mocked<FirebaseService>;
-  let usersService: jest.Mocked<UsersService>;
+  let prisma: jest.Mocked<PrismaService>;
 
   const mockUser1 = {
-    id: 'user-doc-id-1',
     uid: 'user-uid-1',
     email: 'user1@example.com',
     displayName: 'User One',
@@ -23,7 +20,6 @@ describe('HouseholdsService', () => {
   };
 
   const mockUser2 = {
-    id: 'user-doc-id-2',
     uid: 'user-uid-2',
     email: 'user2@example.com',
     displayName: 'User Two',
@@ -33,7 +29,6 @@ describe('HouseholdsService', () => {
   };
 
   const mockUser3 = {
-    id: 'user-doc-id-3',
     uid: 'user-uid-3',
     email: 'user3@example.com',
     displayName: 'User Three',
@@ -45,10 +40,23 @@ describe('HouseholdsService', () => {
   const mockHousehold = {
     id: 'household-id-123',
     name: 'Test Household',
-    memberIds: ['user-uid-1', 'user-uid-2'],
     createdBy: 'user-uid-1',
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-15'),
+    members: [
+      {
+        userId: 'user-uid-1',
+        householdId: 'household-id-123',
+        joinedAt: new Date('2024-01-01'),
+        user: mockUser1,
+      },
+      {
+        userId: 'user-uid-2',
+        householdId: 'household-id-123',
+        joinedAt: new Date('2024-01-02'),
+        user: mockUser2,
+      },
+    ],
   };
 
   const mockCreateHouseholdDto: CreateHouseholdDto = {
@@ -64,34 +72,31 @@ describe('HouseholdsService', () => {
   };
 
   beforeEach(async () => {
-    const mockFirebaseService = {
-      queryDocuments: jest.fn(),
-      getDocument: jest.fn(),
-      createDocument: jest.fn(),
-      updateDocument: jest.fn(),
-    };
-
-    const mockUsersService = {
-      findByUid: jest.fn(),
+    const mockPrismaService = {
+      household: {
+        findMany: jest.fn(),
+        findUnique: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      householdMember: {
+        findUnique: jest.fn(),
+        create: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         HouseholdsService,
         {
-          provide: FirebaseService,
-          useValue: mockFirebaseService,
-        },
-        {
-          provide: UsersService,
-          useValue: mockUsersService,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
 
     service = module.get<HouseholdsService>(HouseholdsService);
-    firebaseService = module.get(FirebaseService);
-    usersService = module.get(UsersService);
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -104,34 +109,45 @@ describe('HouseholdsService', () => {
       const userUid = 'user-uid-1';
       const households = [
         mockHousehold,
-        { ...mockHousehold, id: 'household-id-456', name: 'Another Household' },
+        {
+          ...mockHousehold,
+          id: 'household-id-456',
+          name: 'Another Household',
+        },
       ];
-      firebaseService.queryDocuments.mockResolvedValue(households);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
-      });
+      (prisma.household.findMany as jest.Mock).mockResolvedValue(households);
 
       // Act
       const result = await service.findAllByUser(userUid);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        'households',
-        expect.any(Function),
-      );
+      expect(prisma.household.findMany).toHaveBeenCalledWith({
+        where: {
+          members: {
+            some: { userId: userUid },
+          },
+        },
+        include: {
+          members: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
       expect(result).toHaveLength(2);
       expect(result[0]).toHaveProperty('memberDetails');
-      expect(result[0].memberDetails).toEqual([mockUser1, mockUser2]);
-      expect(result[1]).toHaveProperty('memberDetails');
-      expect(result[1].memberDetails).toEqual([mockUser1, mockUser2]);
+      expect(result[0].memberDetails).toHaveLength(2);
+      expect(result[0].memberDetails[0]).toMatchObject({
+        uid: 'user-uid-1',
+        displayName: 'User One',
+      });
     });
 
     it('should return empty array when user has no households', async () => {
       // Arrange
       const userUid = 'user-uid-without-households';
-      firebaseService.queryDocuments.mockResolvedValue([]);
+      (prisma.household.findMany as jest.Mock).mockResolvedValue([]);
 
       // Act
       const result = await service.findAllByUser(userUid);
@@ -140,30 +156,11 @@ describe('HouseholdsService', () => {
       expect(result).toEqual([]);
     });
 
-    it('should handle missing users gracefully by filtering them out', async () => {
+    it('should handle database query errors', async () => {
       // Arrange
       const userUid = 'user-uid-1';
-      const households = [mockHousehold];
-      firebaseService.queryDocuments.mockResolvedValue(households);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        // user-uid-2 not found
-        return Promise.reject(new NotFoundException());
-      });
-
-      // Act
-      const result = await service.findAllByUser(userUid);
-
-      // Assert
-      expect(result).toHaveLength(1);
-      expect(result[0].memberDetails).toEqual([mockUser1]);
-    });
-
-    it('should handle Firebase query errors', async () => {
-      // Arrange
-      const userUid = 'user-uid-1';
-      const error = new Error('Firebase query failed');
-      firebaseService.queryDocuments.mockRejectedValue(error);
+      const error = new Error('Database query failed');
+      (prisma.household.findMany as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findAllByUser(userUid)).rejects.toThrow(error);
@@ -174,28 +171,32 @@ describe('HouseholdsService', () => {
     it('should return household when found with populated memberDetails', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
-      });
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
 
       // Act
       const result = await service.findOne(householdId);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}`,
-      );
+      expect(prisma.household.findUnique).toHaveBeenCalledWith({
+        where: { id: householdId },
+        include: {
+          members: {
+            include: {
+              user: true,
+            },
+          },
+        },
+      });
       expect(result).toHaveProperty('memberDetails');
-      expect(result.memberDetails).toEqual([mockUser1, mockUser2]);
+      expect(result.memberDetails).toHaveLength(2);
     });
 
     it('should throw NotFoundException when household not found', async () => {
       // Arrange
       const householdId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.findOne(householdId)).rejects.toThrow(
@@ -206,11 +207,11 @@ describe('HouseholdsService', () => {
       );
     });
 
-    it('should handle Firebase get errors', async () => {
+    it('should handle database errors', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      const error = new Error('Firebase get failed');
-      firebaseService.getDocument.mockRejectedValue(error);
+      const error = new Error('Database error');
+      (prisma.household.findUnique as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findOne(householdId)).rejects.toThrow(error);
@@ -221,41 +222,74 @@ describe('HouseholdsService', () => {
     it('should create household with creator as first member and populated memberDetails', async () => {
       // Arrange
       const creatorUid = 'user-uid-1';
-      const newHouseholdId = 'new-household-id';
-      firebaseService.createDocument.mockResolvedValue(newHouseholdId);
-      usersService.findByUid.mockResolvedValue(mockUser1);
+      const newHousehold = {
+        id: 'new-household-id',
+        name: mockCreateHouseholdDto.name,
+        createdBy: creatorUid,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+        members: [
+          {
+            userId: creatorUid,
+            householdId: 'new-household-id',
+            joinedAt: new Date(),
+            user: mockUser1,
+          },
+        ],
+      };
+      (prisma.household.create as jest.Mock).mockResolvedValue(newHousehold);
 
       // Act
       const result = await service.create(mockCreateHouseholdDto, creatorUid);
 
       // Assert
-      expect(firebaseService.createDocument).toHaveBeenCalledWith(
-        'households',
-        expect.objectContaining({
+      expect(prisma.household.create).toHaveBeenCalledWith({
+        data: {
           name: mockCreateHouseholdDto.name,
-          memberIds: [creatorUid],
           createdBy: creatorUid,
-          createdAt: expect.any(Date),
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result).toEqual({
-        id: newHouseholdId,
-        name: mockCreateHouseholdDto.name,
-        memberIds: [creatorUid],
-        createdBy: creatorUid,
-        createdAt: expect.any(Date),
-        updatedAt: expect.any(Date),
-        memberDetails: [mockUser1],
+          members: {
+            create: {
+              userId: creatorUid,
+            },
+          },
+        },
+        include: {
+          members: {
+            include: {
+              user: true,
+            },
+          },
+        },
       });
+      expect(result).toMatchObject({
+        id: newHousehold.id,
+        name: mockCreateHouseholdDto.name,
+        createdBy: creatorUid,
+      });
+      expect(result.memberDetails).toHaveLength(1);
+      expect(result.memberDetails[0].uid).toBe(creatorUid);
     });
 
     it('should set createdAt and updatedAt to same time', async () => {
       // Arrange
       const creatorUid = 'user-uid-1';
-      const newHouseholdId = 'new-household-id';
-      firebaseService.createDocument.mockResolvedValue(newHouseholdId);
-      usersService.findByUid.mockResolvedValue(mockUser1);
+      const now = new Date();
+      const newHousehold = {
+        id: 'new-household-id',
+        name: mockCreateHouseholdDto.name,
+        createdBy: creatorUid,
+        createdAt: now,
+        updatedAt: now,
+        members: [
+          {
+            userId: creatorUid,
+            householdId: 'new-household-id',
+            joinedAt: now,
+            user: mockUser1,
+          },
+        ],
+      };
+      (prisma.household.create as jest.Mock).mockResolvedValue(newHousehold);
 
       // Act
       const result = await service.create(mockCreateHouseholdDto, creatorUid);
@@ -264,11 +298,11 @@ describe('HouseholdsService', () => {
       expect(result.createdAt).toEqual(result.updatedAt);
     });
 
-    it('should handle Firebase create errors', async () => {
+    it('should handle database create errors', async () => {
       // Arrange
       const creatorUid = 'user-uid-1';
-      const error = new Error('Firebase create failed');
-      firebaseService.createDocument.mockRejectedValue(error);
+      const error = new Error('Database create failed');
+      (prisma.household.create as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(
@@ -281,59 +315,41 @@ describe('HouseholdsService', () => {
     it('should update household and return updated data with populated memberDetails', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
-      });
+      const updatedHousehold = {
+        ...mockHousehold,
+        ...mockUpdateHouseholdDto,
+        updatedAt: new Date(),
+      };
+      (prisma.household.update as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.update(householdId, mockUpdateHouseholdDto);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}`,
-      );
-      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `households/${householdId}`,
-        expect.objectContaining({
+      expect(prisma.household.update).toHaveBeenCalledWith({
+        where: { id: householdId },
+        data: {
           name: mockUpdateHouseholdDto.name,
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result).toMatchObject({
-        ...mockHousehold,
-        ...mockUpdateHouseholdDto,
-        updatedAt: expect.any(Date),
+        },
+        include: {
+          members: {
+            include: {
+              user: true,
+            },
+          },
+        },
       });
-      expect(result.memberDetails).toEqual([mockUser1, mockUser2]);
+      expect(result.name).toBe(mockUpdateHouseholdDto.name);
+      expect(result.memberDetails).toHaveLength(2);
     });
 
-    it('should throw NotFoundException when household does not exist', async () => {
-      // Arrange
-      const householdId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
-
-      // Act & Assert
-      await expect(
-        service.update(householdId, mockUpdateHouseholdDto),
-      ).rejects.toThrow(NotFoundException);
-      expect(firebaseService.updateDocument).not.toHaveBeenCalled();
-    });
-
-    it('should handle Firebase update errors', async () => {
+    it('should handle database update errors', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      const error = new Error('Firebase update failed');
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      firebaseService.updateDocument.mockRejectedValue(error);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
-      });
+      const error = new Error('Database update failed');
+      (prisma.household.update as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(
@@ -346,45 +362,62 @@ describe('HouseholdsService', () => {
     it('should add new member to household with populated memberDetails', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        if (uid === 'user-uid-3') return Promise.resolve(mockUser3);
-        return Promise.reject(new NotFoundException());
+      const updatedHousehold = {
+        ...mockHousehold,
+        members: [
+          ...mockHousehold.members,
+          {
+            userId: 'user-uid-3',
+            householdId,
+            joinedAt: new Date(),
+            user: mockUser3,
+          },
+        ],
+      };
+      (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.householdMember.create as jest.Mock).mockResolvedValue({
+        userId: mockAddMemberDto.userId,
+        householdId,
+        joinedAt: new Date(),
       });
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.addMember(householdId, mockAddMemberDto);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}`,
-      );
-      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `households/${householdId}`,
-        expect.objectContaining({
-          memberIds: [...mockHousehold.memberIds, mockAddMemberDto.userId],
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result.memberIds).toContain(mockAddMemberDto.userId);
-      expect(result.memberIds).toHaveLength(3);
-      expect(result.memberDetails).toEqual([mockUser1, mockUser2, mockUser3]);
+      expect(prisma.householdMember.findUnique).toHaveBeenCalledWith({
+        where: {
+          userId_householdId: {
+            userId: mockAddMemberDto.userId,
+            householdId,
+          },
+        },
+      });
+      expect(prisma.householdMember.create).toHaveBeenCalledWith({
+        data: {
+          userId: mockAddMemberDto.userId,
+          householdId,
+        },
+      });
+      expect(result.memberDetails).toHaveLength(3);
     });
 
     it('should throw ConflictException when user is already a member', async () => {
       // Arrange
       const householdId = 'household-id-123';
       const existingMemberDto: AddMemberDto = {
-        userId: 'user-uid-1', // Already in mockHousehold.members
+        userId: 'user-uid-1',
       };
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
+      (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue({
+        userId: 'user-uid-1',
+        householdId,
+        joinedAt: new Date(),
       });
 
       // Act & Assert
@@ -394,53 +427,71 @@ describe('HouseholdsService', () => {
       await expect(
         service.addMember(householdId, existingMemberDto),
       ).rejects.toThrow('User is already a member of this household');
-      expect(firebaseService.updateDocument).not.toHaveBeenCalled();
+      expect(prisma.householdMember.create).not.toHaveBeenCalled();
     });
 
     it('should throw NotFoundException when household does not exist', async () => {
       // Arrange
       const householdId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.householdMember.create as jest.Mock).mockResolvedValue({
+        userId: mockAddMemberDto.userId,
+        householdId,
+        joinedAt: new Date(),
+      });
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(
         service.addMember(householdId, mockAddMemberDto),
       ).rejects.toThrow(NotFoundException);
-      expect(firebaseService.updateDocument).not.toHaveBeenCalled();
     });
 
     it('should preserve existing members when adding new member', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        if (uid === 'user-uid-3') return Promise.resolve(mockUser3);
-        return Promise.reject(new NotFoundException());
+      const updatedHousehold = {
+        ...mockHousehold,
+        members: [
+          ...mockHousehold.members,
+          {
+            userId: 'user-uid-3',
+            householdId,
+            joinedAt: new Date(),
+            user: mockUser3,
+          },
+        ],
+      };
+      (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.householdMember.create as jest.Mock).mockResolvedValue({
+        userId: mockAddMemberDto.userId,
+        householdId,
+        joinedAt: new Date(),
       });
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.addMember(householdId, mockAddMemberDto);
 
       // Assert
-      expect(result.memberIds).toContain('user-uid-1');
-      expect(result.memberIds).toContain('user-uid-2');
-      expect(result.memberIds).toContain('user-uid-3');
+      expect(result.memberDetails).toHaveLength(3);
+      const userIds = result.memberDetails.map((m) => m.uid);
+      expect(userIds).toContain('user-uid-1');
+      expect(userIds).toContain('user-uid-2');
+      expect(userIds).toContain('user-uid-3');
     });
 
-    it('should handle Firebase update errors', async () => {
+    it('should handle database create errors', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      const error = new Error('Firebase update failed');
-      firebaseService.getDocument.mockResolvedValue(mockHousehold);
-      firebaseService.updateDocument.mockRejectedValue(error);
-      usersService.findByUid.mockImplementation((uid: string) => {
-        if (uid === 'user-uid-1') return Promise.resolve(mockUser1);
-        if (uid === 'user-uid-2') return Promise.resolve(mockUser2);
-        return Promise.reject(new NotFoundException());
-      });
+      const error = new Error('Database create failed');
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
+      (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue(null);
+      (prisma.householdMember.create as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(

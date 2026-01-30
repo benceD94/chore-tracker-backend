@@ -1,15 +1,35 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { RegistryService } from './registry.service';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateRegistryEntryDto } from './dto/create-registry-entry.dto';
 import { BatchRegistryDto } from './dto/batch-registry.dto';
 import { RegistryQueryDto, RegistryFilter } from './dto/registry-query.dto';
 
 describe('RegistryService', () => {
   let service: RegistryService;
-  let firebaseService: jest.Mocked<FirebaseService>;
+  let prisma: jest.Mocked<PrismaService>;
 
   const householdId = 'household-id-123';
+
+  const mockChore = {
+    id: 'chore-id-123',
+    name: 'Test Chore',
+    points: 10,
+    description: 'Test description',
+    categoryId: 'category-id-123',
+    householdId,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
+
+  const mockUser = {
+    uid: 'user-uid-1',
+    email: 'user@example.com',
+    displayName: 'Test User',
+    photoURL: null,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+  };
 
   const mockRegistryEntry = {
     id: 'registry-id-123',
@@ -19,6 +39,8 @@ describe('RegistryService', () => {
     times: 1,
     completedAt: new Date('2024-01-15T10:00:00Z'),
     createdAt: new Date('2024-01-15T10:00:00Z'),
+    chore: mockChore,
+    user: mockUser,
   };
 
   const mockCreateRegistryEntryDto: CreateRegistryEntryDto = {
@@ -28,35 +50,25 @@ describe('RegistryService', () => {
   };
 
   beforeEach(async () => {
-    const mockFirebaseService = {
-      queryDocuments: jest.fn(),
-      createDocument: jest.fn(),
-      getDocument: jest.fn(),
+    const mockPrismaService = {
+      registryEntry: {
+        findMany: jest.fn(),
+        create: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         RegistryService,
         {
-          provide: FirebaseService,
-          useValue: mockFirebaseService,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
 
     service = module.get<RegistryService>(RegistryService);
-    firebaseService = module.get(FirebaseService);
-
-    // Setup default mocks for enrichment
-    firebaseService.getDocument.mockImplementation((path: string) => {
-      if (path.includes('/chores/')) {
-        return Promise.resolve({ name: 'Test Chore', points: 0 });
-      }
-      if (path.startsWith('users/')) {
-        return Promise.resolve({ displayName: 'Test User' });
-      }
-      return Promise.resolve(null);
-    });
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -73,22 +85,29 @@ describe('RegistryService', () => {
         mockRegistryEntry,
         { ...mockRegistryEntry, id: 'registry-id-456' },
       ];
-      firebaseService.queryDocuments.mockResolvedValueOnce(entries);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue(entries);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        `households/${householdId}/registry`,
-        expect.any(Function),
-      );
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith({
+        where: { householdId },
+        include: {
+          chore: true,
+          user: true,
+        },
+        orderBy: { completedAt: 'desc' },
+        take: 50,
+      });
       expect(result).toHaveLength(2);
-      expect(result[0]).toEqual({
-        ...mockRegistryEntry,
-        points: 0,
-        choreName: 'Test Chore',
-        userName: 'Test User',
+      expect(result[0]).toMatchObject({
+        id: mockRegistryEntry.id,
+        choreId: mockRegistryEntry.choreId,
+        userId: mockRegistryEntry.userId,
+        points: mockChore.points,
+        choreName: mockChore.name,
+        userName: mockUser.displayName,
       });
     });
 
@@ -99,16 +118,27 @@ describe('RegistryService', () => {
         userId: 'user-uid-1',
       };
       const entries = [mockRegistryEntry];
-      firebaseService.queryDocuments.mockResolvedValueOnce(entries);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue(entries);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith({
+        where: {
+          householdId,
+          userId: 'user-uid-1',
+        },
+        include: {
+          chore: true,
+          user: true,
+        },
+        orderBy: { completedAt: 'desc' },
+        take: 50,
+      });
       expect(result[0]).toMatchObject({
-        choreName: 'Test Chore',
-        userName: 'Test User',
+        choreName: mockChore.name,
+        userName: mockUser.displayName,
       });
     });
 
@@ -118,13 +148,19 @@ describe('RegistryService', () => {
         filter: RegistryFilter.ALL,
         limit: 10,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 10,
+        }),
+      );
     });
 
     it('should use default limit of 50 when not specified', async () => {
@@ -132,13 +168,19 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.ALL,
       };
-      firebaseService.queryDocuments.mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          take: 50,
+        }),
+      );
     });
 
     it('should filter by TODAY', async () => {
@@ -146,13 +188,25 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.TODAY,
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         userId: mockRegistryEntry.userId,
@@ -166,13 +220,25 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.YESTERDAY,
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         userId: mockRegistryEntry.userId,
@@ -186,13 +252,25 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_WEEK,
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         choreName: expect.any(String),
@@ -205,13 +283,25 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.LAST_WEEK,
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         choreName: expect.any(String),
@@ -224,13 +314,25 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_MONTH,
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         choreName: expect.any(String),
@@ -244,13 +346,26 @@ describe('RegistryService', () => {
         filter: RegistryFilter.TODAY,
         userId: 'user-uid-1',
       };
-      firebaseService.queryDocuments.mockResolvedValueOnce([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalled();
+      expect(prisma.registryEntry.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            householdId,
+            userId: 'user-uid-1',
+            completedAt: expect.objectContaining({
+              gte: expect.any(Date),
+              lte: expect.any(Date),
+            }),
+          }),
+        }),
+      );
       expect(result[0]).toMatchObject({
         choreId: mockRegistryEntry.choreId,
         userId: mockRegistryEntry.userId,
@@ -264,7 +379,7 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.ALL,
       };
-      firebaseService.queryDocuments.mockResolvedValue([]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -273,13 +388,13 @@ describe('RegistryService', () => {
       expect(result).toEqual([]);
     });
 
-    it('should handle Firebase query errors', async () => {
+    it('should handle database query errors', async () => {
       // Arrange
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.ALL,
       };
-      const error = new Error('Firebase query failed');
-      firebaseService.queryDocuments.mockRejectedValue(error);
+      const error = new Error('Database query failed');
+      (prisma.registryEntry.findMany as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findAll(householdId, queryDto)).rejects.toThrow(
@@ -291,36 +406,47 @@ describe('RegistryService', () => {
   describe('create', () => {
     it('should create registry entry with default times', async () => {
       // Arrange
-      const newEntryId = 'new-registry-id';
       const dtoWithoutTimes: CreateRegistryEntryDto = {
         choreId: 'chore-id-456',
         userId: 'user-uid-2',
       };
-      firebaseService.createDocument.mockResolvedValue(newEntryId);
+      const newEntry = {
+        id: 'new-registry-id',
+        choreId: dtoWithoutTimes.choreId,
+        userId: dtoWithoutTimes.userId,
+        householdId,
+        times: 1,
+        completedAt: new Date(),
+        createdAt: new Date(),
+        chore: mockChore,
+        user: mockUser,
+      };
+      (prisma.registryEntry.create as jest.Mock).mockResolvedValue(newEntry);
 
       // Act
       const result = await service.create(householdId, dtoWithoutTimes);
 
       // Assert
-      expect(firebaseService.createDocument).toHaveBeenCalledWith(
-        `households/${householdId}/registry`,
-        expect.objectContaining({
+      expect(prisma.registryEntry.create).toHaveBeenCalledWith({
+        data: {
           choreId: dtoWithoutTimes.choreId,
           userId: dtoWithoutTimes.userId,
           householdId,
-          times: 1, // Default value
-          completedAt: expect.any(Date),
-          createdAt: expect.any(Date),
-        }),
-      );
+          times: 1,
+        },
+        include: {
+          chore: true,
+          user: true,
+        },
+      });
       expect(result).toMatchObject({
-        id: newEntryId,
+        id: newEntry.id,
         choreId: dtoWithoutTimes.choreId,
         userId: dtoWithoutTimes.userId,
         householdId,
         times: 1,
-        choreName: expect.any(String),
-        userName: expect.any(String),
+        choreName: mockChore.name,
+        userName: mockUser.displayName,
         completedAt: expect.any(Date),
         createdAt: expect.any(Date),
       });
@@ -328,8 +454,18 @@ describe('RegistryService', () => {
 
     it('should create registry entry with specified times', async () => {
       // Arrange
-      const newEntryId = 'new-registry-id';
-      firebaseService.createDocument.mockResolvedValue(newEntryId);
+      const newEntry = {
+        id: 'new-registry-id',
+        choreId: mockCreateRegistryEntryDto.choreId,
+        userId: mockCreateRegistryEntryDto.userId,
+        householdId,
+        times: 2,
+        completedAt: new Date(),
+        createdAt: new Date(),
+        chore: mockChore,
+        user: mockUser,
+      };
+      (prisma.registryEntry.create as jest.Mock).mockResolvedValue(newEntry);
 
       // Act
       const result = await service.create(
@@ -338,24 +474,36 @@ describe('RegistryService', () => {
       );
 
       // Assert
-      expect(firebaseService.createDocument).toHaveBeenCalledWith(
-        `households/${householdId}/registry`,
-        expect.objectContaining({
+      expect(prisma.registryEntry.create).toHaveBeenCalledWith({
+        data: {
           choreId: mockCreateRegistryEntryDto.choreId,
           userId: mockCreateRegistryEntryDto.userId,
           householdId,
           times: 2,
-          completedAt: expect.any(Date),
-          createdAt: expect.any(Date),
-        }),
-      );
+        },
+        include: {
+          chore: true,
+          user: true,
+        },
+      });
       expect(result.times).toBe(2);
     });
 
     it('should set completedAt and createdAt to same time', async () => {
       // Arrange
-      const newEntryId = 'new-registry-id';
-      firebaseService.createDocument.mockResolvedValue(newEntryId);
+      const now = new Date();
+      const newEntry = {
+        id: 'new-registry-id',
+        choreId: mockCreateRegistryEntryDto.choreId,
+        userId: mockCreateRegistryEntryDto.userId,
+        householdId,
+        times: 2,
+        completedAt: now,
+        createdAt: now,
+        chore: mockChore,
+        user: mockUser,
+      };
+      (prisma.registryEntry.create as jest.Mock).mockResolvedValue(newEntry);
 
       // Act
       const result = await service.create(
@@ -367,10 +515,10 @@ describe('RegistryService', () => {
       expect(result.completedAt).toEqual(result.createdAt);
     });
 
-    it('should handle Firebase create errors', async () => {
+    it('should handle database create errors', async () => {
       // Arrange
-      const error = new Error('Firebase create failed');
-      firebaseService.createDocument.mockRejectedValue(error);
+      const error = new Error('Database create failed');
+      (prisma.registryEntry.create as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(
@@ -389,16 +537,46 @@ describe('RegistryService', () => {
           { choreId: 'chore-3', userId: 'user-3', times: 3 },
         ],
       };
-      firebaseService.createDocument
-        .mockResolvedValueOnce('entry-id-1')
-        .mockResolvedValueOnce('entry-id-2')
-        .mockResolvedValueOnce('entry-id-3');
+      (prisma.registryEntry.create as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'entry-id-1',
+          choreId: 'chore-1',
+          userId: 'user-1',
+          householdId,
+          times: 1,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        })
+        .mockResolvedValueOnce({
+          id: 'entry-id-2',
+          choreId: 'chore-2',
+          userId: 'user-2',
+          householdId,
+          times: 2,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        })
+        .mockResolvedValueOnce({
+          id: 'entry-id-3',
+          choreId: 'chore-3',
+          userId: 'user-3',
+          householdId,
+          times: 3,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        });
 
       // Act
       const result = await service.createBatch(householdId, batchDto);
 
       // Assert
-      expect(firebaseService.createDocument).toHaveBeenCalledTimes(3);
+      expect(prisma.registryEntry.create).toHaveBeenCalledTimes(3);
       expect(result).toHaveLength(3);
       expect(result[0].choreId).toBe('chore-1');
       expect(result[1].choreId).toBe('chore-2');
@@ -418,11 +596,11 @@ describe('RegistryService', () => {
       const result = await service.createBatch(householdId, batchDto);
 
       // Assert
-      expect(firebaseService.createDocument).not.toHaveBeenCalled();
+      expect(prisma.registryEntry.create).not.toHaveBeenCalled();
       expect(result).toEqual([]);
     });
 
-    it('should handle Firebase create errors during batch', async () => {
+    it('should handle database create errors during batch', async () => {
       // Arrange
       const batchDto: BatchRegistryDto = {
         chores: [
@@ -430,16 +608,26 @@ describe('RegistryService', () => {
           { choreId: 'chore-2', userId: 'user-2' },
         ],
       };
-      const error = new Error('Firebase create failed');
-      firebaseService.createDocument
-        .mockResolvedValueOnce('entry-id-1')
+      const error = new Error('Database create failed');
+      (prisma.registryEntry.create as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'entry-id-1',
+          choreId: 'chore-1',
+          userId: 'user-1',
+          householdId,
+          times: 1,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        })
         .mockRejectedValueOnce(error);
 
       // Act & Assert
       await expect(service.createBatch(householdId, batchDto)).rejects.toThrow(
         error,
       );
-      expect(firebaseService.createDocument).toHaveBeenCalledTimes(2);
+      expect(prisma.registryEntry.create).toHaveBeenCalledTimes(2);
     });
 
     it('should process entries sequentially in batch', async () => {
@@ -450,9 +638,29 @@ describe('RegistryService', () => {
           { choreId: 'chore-2', userId: 'user-2' },
         ],
       };
-      firebaseService.createDocument
-        .mockResolvedValueOnce('entry-id-1')
-        .mockResolvedValueOnce('entry-id-2');
+      (prisma.registryEntry.create as jest.Mock)
+        .mockResolvedValueOnce({
+          id: 'entry-id-1',
+          choreId: 'chore-1',
+          userId: 'user-1',
+          householdId,
+          times: 1,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        })
+        .mockResolvedValueOnce({
+          id: 'entry-id-2',
+          choreId: 'chore-2',
+          userId: 'user-2',
+          householdId,
+          times: 1,
+          completedAt: new Date(),
+          createdAt: new Date(),
+          chore: mockChore,
+          user: mockUser,
+        });
 
       // Act
       const result = await service.createBatch(householdId, batchDto);

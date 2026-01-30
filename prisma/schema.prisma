@@ -1,0 +1,138 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+// Users table - Firebase UID as primary key
+model User {
+  uid         String   @id // Firebase Auth UID
+  email       String?  @unique
+  displayName String?
+  photoURL    String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  householdMemberships HouseholdMember[]
+  createdHouseholds    Household[]       @relation("HouseholdCreator")
+  registryEntries      RegistryEntry[]
+  assignedChores       ChoreAssignment[]
+
+  @@map("users")
+}
+
+// Households table
+model Household {
+  id        String   @id @default(uuid())
+  name      String
+  createdBy String
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  creator    User              @relation("HouseholdCreator", fields: [createdBy], references: [uid], onDelete: Cascade)
+  members    HouseholdMember[]
+  chores     Chore[]
+  categories Category[]
+  registry   RegistryEntry[]
+
+  @@index([createdBy])
+  @@map("households")
+}
+
+// Junction table for User-Household many-to-many relationship
+model HouseholdMember {
+  userId      String
+  householdId String
+  joinedAt    DateTime @default(now())
+
+  // Relations
+  user      User      @relation(fields: [userId], references: [uid], onDelete: Cascade)
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+
+  @@id([userId, householdId])
+  @@index([userId])
+  @@index([householdId])
+  @@map("household_members")
+}
+
+// Categories table
+model Category {
+  id          String   @id @default(uuid())
+  householdId String
+  name        String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chores    Chore[]
+
+  @@index([householdId])
+  @@map("categories")
+}
+
+// Chores table
+model Chore {
+  id          String   @id @default(uuid())
+  householdId String
+  name        String
+  description String?
+  points      Int
+  categoryId  String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  household   Household         @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  category    Category?         @relation(fields: [categoryId], references: [id], onDelete: SetNull)
+  assignments ChoreAssignment[]
+  registry    RegistryEntry[]
+
+  @@index([householdId])
+  @@index([categoryId])
+  @@map("chores")
+}
+
+// Junction table for Chore-User assignments (replaces assignedTo array)
+model ChoreAssignment {
+  choreId    String
+  userId     String
+  assignedAt DateTime @default(now())
+
+  // Relations
+  chore Chore @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user  User  @relation(fields: [userId], references: [uid], onDelete: Cascade)
+
+  @@id([choreId, userId])
+  @@index([choreId])
+  @@index([userId])
+  @@map("chore_assignments")
+}
+
+// Registry entries (audit log of completed chores)
+model RegistryEntry {
+  id          String   @id @default(uuid())
+  householdId String
+  choreId     String
+  userId      String
+  times       Int      @default(1)
+  completedAt DateTime @default(now())
+  createdAt   DateTime @default(now())
+
+  // Relations
+  household Household @relation(fields: [householdId], references: [id], onDelete: Cascade)
+  chore     Chore     @relation(fields: [choreId], references: [id], onDelete: Cascade)
+  user      User      @relation(fields: [userId], references: [uid], onDelete: Cascade)
+
+  @@index([householdId])
+  @@index([choreId])
+  @@index([userId])
+  @@index([completedAt])
+  @@index([householdId, completedAt])
+  @@map("registry_entries")
+}
