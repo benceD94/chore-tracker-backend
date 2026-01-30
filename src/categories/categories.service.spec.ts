@@ -1,21 +1,19 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CategoriesService } from './categories.service';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { NotFoundException } from '@nestjs/common';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 
 describe('CategoriesService', () => {
   let service: CategoriesService;
-  let firebaseService: jest.Mocked<FirebaseService>;
+  let prisma: jest.Mocked<PrismaService>;
 
   const householdId = 'household-id-123';
 
   const mockCategory = {
     id: 'category-id-123',
     name: 'Cleaning',
-    icon: '🧹',
-    color: '#FF5733',
     householdId,
     createdAt: new Date('2024-01-01'),
     updatedAt: new Date('2024-01-15'),
@@ -23,36 +21,35 @@ describe('CategoriesService', () => {
 
   const mockCreateCategoryDto: CreateCategoryDto = {
     name: 'Cooking',
-    icon: '🍳',
-    color: '#33FF57',
   };
 
   const mockUpdateCategoryDto: UpdateCategoryDto = {
     name: 'Updated Cleaning',
-    color: '#5733FF',
   };
 
   beforeEach(async () => {
-    const mockFirebaseService = {
-      queryDocuments: jest.fn(),
-      getDocument: jest.fn(),
-      createDocument: jest.fn(),
-      updateDocument: jest.fn(),
-      deleteDocument: jest.fn(),
+    const mockPrismaService = {
+      category: {
+        findMany: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+        delete: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         CategoriesService,
         {
-          provide: FirebaseService,
-          useValue: mockFirebaseService,
+          provide: PrismaService,
+          useValue: mockPrismaService,
         },
       ],
     }).compile();
 
     service = module.get<CategoriesService>(CategoriesService);
-    firebaseService = module.get(FirebaseService);
+    prisma = module.get(PrismaService) as jest.Mocked<PrismaService>;
   });
 
   afterEach(() => {
@@ -67,23 +64,26 @@ describe('CategoriesService', () => {
         { ...mockCategory, id: 'category-id-456', name: 'Cooking' },
         { ...mockCategory, id: 'category-id-789', name: 'Laundry' },
       ];
-      firebaseService.queryDocuments.mockResolvedValue(categories);
+      (prisma.category.findMany as jest.Mock).mockResolvedValue(categories);
 
       // Act
       const result = await service.findAll(householdId);
 
       // Assert
-      expect(firebaseService.queryDocuments).toHaveBeenCalledWith(
-        `households/${householdId}/categories`,
-        expect.any(Function),
-      );
-      expect(result).toEqual(categories);
+      expect(prisma.category.findMany).toHaveBeenCalledWith({
+        where: { householdId },
+        orderBy: { name: 'asc' },
+      });
       expect(result).toHaveLength(3);
+      expect(result[0]).toMatchObject({
+        id: categories[0].id,
+        name: categories[0].name,
+      });
     });
 
     it('should return empty array when household has no categories', async () => {
       // Arrange
-      firebaseService.queryDocuments.mockResolvedValue([]);
+      (prisma.category.findMany as jest.Mock).mockResolvedValue([]);
 
       // Act
       const result = await service.findAll(householdId);
@@ -92,10 +92,10 @@ describe('CategoriesService', () => {
       expect(result).toEqual([]);
     });
 
-    it('should handle Firebase query errors', async () => {
+    it('should handle database query errors', async () => {
       // Arrange
-      const error = new Error('Firebase query failed');
-      firebaseService.queryDocuments.mockRejectedValue(error);
+      const error = new Error('Database query failed');
+      (prisma.category.findMany as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findAll(householdId)).rejects.toThrow(error);
@@ -106,22 +106,25 @@ describe('CategoriesService', () => {
     it('should return category when found', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
 
       // Act
       const result = await service.findOne(householdId, categoryId);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories/${categoryId}`,
-      );
-      expect(result).toEqual(mockCategory);
+      expect(prisma.category.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: categoryId,
+          householdId,
+        },
+      });
+      expect(result).toMatchObject(mockCategory);
     });
 
     it('should throw NotFoundException when category not found', async () => {
       // Arrange
       const categoryId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.findOne(householdId, categoryId)).rejects.toThrow(
@@ -132,11 +135,11 @@ describe('CategoriesService', () => {
       );
     });
 
-    it('should handle Firebase get errors', async () => {
+    it('should handle database errors', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      const error = new Error('Firebase get failed');
-      firebaseService.getDocument.mockRejectedValue(error);
+      const error = new Error('Database error');
+      (prisma.category.findFirst as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.findOne(householdId, categoryId)).rejects.toThrow(
@@ -148,37 +151,43 @@ describe('CategoriesService', () => {
   describe('create', () => {
     it('should create category with household ID', async () => {
       // Arrange
-      const newCategoryId = 'new-category-id';
-      firebaseService.createDocument.mockResolvedValue(newCategoryId);
+      const newCategory = {
+        id: 'new-category-id',
+        ...mockCreateCategoryDto,
+        householdId,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      };
+      (prisma.category.create as jest.Mock).mockResolvedValue(newCategory);
 
       // Act
       const result = await service.create(householdId, mockCreateCategoryDto);
 
       // Assert
-      expect(firebaseService.createDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories`,
-        expect.objectContaining({
-          name: mockCreateCategoryDto.name,
-          icon: mockCreateCategoryDto.icon,
-          color: mockCreateCategoryDto.color,
+      expect(prisma.category.create).toHaveBeenCalledWith({
+        data: {
           householdId,
-          createdAt: expect.any(Date),
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result).toEqual({
-        id: newCategoryId,
-        ...mockCreateCategoryDto,
+          name: mockCreateCategoryDto.name,
+        },
+      });
+      expect(result).toMatchObject({
+        id: newCategory.id,
+        name: mockCreateCategoryDto.name,
         householdId,
-        createdAt: expect.any(Date),
-        updatedAt: expect.any(Date),
       });
     });
 
     it('should set createdAt and updatedAt to same time', async () => {
       // Arrange
-      const newCategoryId = 'new-category-id';
-      firebaseService.createDocument.mockResolvedValue(newCategoryId);
+      const now = new Date();
+      const newCategory = {
+        id: 'new-category-id',
+        ...mockCreateCategoryDto,
+        householdId,
+        createdAt: now,
+        updatedAt: now,
+      };
+      (prisma.category.create as jest.Mock).mockResolvedValue(newCategory);
 
       // Act
       const result = await service.create(householdId, mockCreateCategoryDto);
@@ -187,10 +196,10 @@ describe('CategoriesService', () => {
       expect(result.createdAt).toEqual(result.updatedAt);
     });
 
-    it('should handle Firebase create errors', async () => {
+    it('should handle database create errors', async () => {
       // Arrange
-      const error = new Error('Firebase create failed');
-      firebaseService.createDocument.mockRejectedValue(error);
+      const error = new Error('Database create failed');
+      (prisma.category.create as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(
@@ -203,8 +212,13 @@ describe('CategoriesService', () => {
     it('should update category and return updated data', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
+      const updatedCategory = {
+        ...mockCategory,
+        ...mockUpdateCategoryDto,
+        updatedAt: new Date(),
+      };
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
+      (prisma.category.update as jest.Mock).mockResolvedValue(updatedCategory);
 
       // Act
       const result = await service.update(
@@ -214,22 +228,19 @@ describe('CategoriesService', () => {
       );
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories/${categoryId}`,
-      );
-      expect(firebaseService.updateDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories/${categoryId}`,
-        expect.objectContaining({
-          name: mockUpdateCategoryDto.name,
-          color: mockUpdateCategoryDto.color,
-          updatedAt: expect.any(Date),
-        }),
-      );
-      expect(result).toEqual({
-        ...mockCategory,
-        ...mockUpdateCategoryDto,
-        updatedAt: expect.any(Date),
+      expect(prisma.category.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: categoryId,
+          householdId,
+        },
       });
+      expect(prisma.category.update).toHaveBeenCalledWith({
+        where: { id: categoryId },
+        data: {
+          name: mockUpdateCategoryDto.name,
+        },
+      });
+      expect(result.name).toBe(mockUpdateCategoryDto.name);
     });
 
     it('should preserve fields not in update DTO', async () => {
@@ -238,8 +249,13 @@ describe('CategoriesService', () => {
       const partialUpdateDto: UpdateCategoryDto = {
         name: 'New Name Only',
       };
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
-      firebaseService.updateDocument.mockResolvedValue(undefined);
+      const updatedCategory = {
+        ...mockCategory,
+        name: 'New Name Only',
+        updatedAt: new Date(),
+      };
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
+      (prisma.category.update as jest.Mock).mockResolvedValue(updatedCategory);
 
       // Act
       const result = await service.update(
@@ -249,29 +265,29 @@ describe('CategoriesService', () => {
       );
 
       // Assert
-      expect(result.icon).toBe(mockCategory.icon);
-      expect(result.color).toBe(mockCategory.color);
+      expect(result.id).toBe(mockCategory.id);
+      expect(result.householdId).toBe(mockCategory.householdId);
       expect(result.name).toBe('New Name Only');
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
       // Arrange
       const categoryId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(
         service.update(householdId, categoryId, mockUpdateCategoryDto),
       ).rejects.toThrow(NotFoundException);
-      expect(firebaseService.updateDocument).not.toHaveBeenCalled();
+      expect(prisma.category.update).not.toHaveBeenCalled();
     });
 
-    it('should handle Firebase update errors', async () => {
+    it('should handle database update errors', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      const error = new Error('Firebase update failed');
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
-      firebaseService.updateDocument.mockRejectedValue(error);
+      const error = new Error('Database update failed');
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
+      (prisma.category.update as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(
@@ -284,39 +300,42 @@ describe('CategoriesService', () => {
     it('should delete category after verifying it exists', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
-      firebaseService.deleteDocument.mockResolvedValue(undefined);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
+      (prisma.category.delete as jest.Mock).mockResolvedValue(mockCategory);
 
       // Act
       await service.remove(householdId, categoryId);
 
       // Assert
-      expect(firebaseService.getDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories/${categoryId}`,
-      );
-      expect(firebaseService.deleteDocument).toHaveBeenCalledWith(
-        `households/${householdId}/categories/${categoryId}`,
-      );
+      expect(prisma.category.findFirst).toHaveBeenCalledWith({
+        where: {
+          id: categoryId,
+          householdId,
+        },
+      });
+      expect(prisma.category.delete).toHaveBeenCalledWith({
+        where: { id: categoryId },
+      });
     });
 
     it('should throw NotFoundException when category does not exist', async () => {
       // Arrange
       const categoryId = 'non-existent-id';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.remove(householdId, categoryId)).rejects.toThrow(
         NotFoundException,
       );
-      expect(firebaseService.deleteDocument).not.toHaveBeenCalled();
+      expect(prisma.category.delete).not.toHaveBeenCalled();
     });
 
-    it('should handle Firebase delete errors', async () => {
+    it('should handle database delete errors', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      const error = new Error('Firebase delete failed');
-      firebaseService.getDocument.mockResolvedValue(mockCategory);
-      firebaseService.deleteDocument.mockRejectedValue(error);
+      const error = new Error('Database delete failed');
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(mockCategory);
+      (prisma.category.delete as jest.Mock).mockRejectedValue(error);
 
       // Act & Assert
       await expect(service.remove(householdId, categoryId)).rejects.toThrow(
@@ -327,14 +346,14 @@ describe('CategoriesService', () => {
     it('should verify category exists before attempting delete', async () => {
       // Arrange
       const categoryId = 'category-id-123';
-      firebaseService.getDocument.mockResolvedValue(null);
+      (prisma.category.findFirst as jest.Mock).mockResolvedValue(null);
 
       // Act & Assert
       await expect(service.remove(householdId, categoryId)).rejects.toThrow(
         NotFoundException,
       );
-      expect(firebaseService.getDocument).toHaveBeenCalled();
-      expect(firebaseService.deleteDocument).not.toHaveBeenCalled();
+      expect(prisma.category.findFirst).toHaveBeenCalled();
+      expect(prisma.category.delete).not.toHaveBeenCalled();
     });
   });
 });

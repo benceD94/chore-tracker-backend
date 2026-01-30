@@ -3,146 +3,192 @@ import {
   NotFoundException,
   ConflictException,
 } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
-import { UsersService } from '../users/users.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { HouseholdResponseDto } from './dto/household-response.dto';
-import { UserResponseDto } from '../users/dto/user-response.dto';
-import { Household } from './entities/household.entity';
 
 @Injectable()
 export class HouseholdsService {
-  constructor(
-    private readonly firebaseService: FirebaseService,
-    private readonly usersService: UsersService,
-  ) {}
-
-  private async populateMemberDetails(
-    household: Household,
-  ): Promise<HouseholdResponseDto> {
-    const memberDetailsPromises = household.memberIds.map(async (uid) => {
-      try {
-        const user = await this.usersService.findByUid(uid);
-        return user;
-      } catch (error) {
-        console.warn(`User with UID ${uid} not found:`, error.message);
-        return null;
-      }
-    });
-
-    const memberDetails = (await Promise.all(memberDetailsPromises)).filter(
-      (member): member is UserResponseDto => member !== null,
-    );
-
-    return {
-      ...household,
-      memberDetails,
-    } as HouseholdResponseDto;
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAllByUser(userUid: string): Promise<HouseholdResponseDto[]> {
-    const households = await this.firebaseService.queryDocuments<Household>(
-      'households',
-      (query) => query.where('memberIds', 'array-contains', userUid),
-    );
+    const households = await this.prisma.household.findMany({
+      where: {
+        members: {
+          some: { userId: userUid },
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
 
-    return Promise.all(
-      households.map((household) => this.populateMemberDetails(household)),
-    );
+    return households.map((household) => ({
+      id: household.id,
+      name: household.name,
+      createdBy: household.createdBy,
+      memberIds: household.members.map((m) => m.userId),
+      memberDetails: household.members.map((m) => ({
+        id: m.user.uid,
+        uid: m.user.uid,
+        email: m.user.email ?? undefined,
+        displayName: m.user.displayName ?? undefined,
+        photoURL: m.user.photoURL ?? undefined,
+        createdAt: m.user.createdAt,
+        updatedAt: m.user.updatedAt,
+      })),
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
+    }));
   }
 
   async findOne(householdId: string): Promise<HouseholdResponseDto> {
-    const household = await this.firebaseService.getDocument<Household>(
-      `households/${householdId}`,
-    );
+    const household = await this.prisma.household.findUnique({
+      where: { id: householdId },
+      include: {
+        members: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
 
     if (!household) {
       throw new NotFoundException(`Household with ID ${householdId} not found`);
     }
 
-    return this.populateMemberDetails(household);
+    return {
+      id: household.id,
+      name: household.name,
+      createdBy: household.createdBy,
+      memberIds: household.members.map((m) => m.userId),
+      memberDetails: household.members.map((m) => ({
+        id: m.user.uid,
+        uid: m.user.uid,
+        email: m.user.email ?? undefined,
+        displayName: m.user.displayName ?? undefined,
+        photoURL: m.user.photoURL ?? undefined,
+        createdAt: m.user.createdAt,
+        updatedAt: m.user.updatedAt,
+      })),
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
+    };
   }
 
   async create(
     createHouseholdDto: CreateHouseholdDto,
     creatorUid: string,
   ): Promise<HouseholdResponseDto> {
-    const now = new Date();
-    const householdData = {
-      ...createHouseholdDto,
-      memberIds: [creatorUid],
-      createdBy: creatorUid,
-      createdAt: now,
-      updatedAt: now,
+    const household = await this.prisma.household.create({
+      data: {
+        name: createHouseholdDto.name,
+        createdBy: creatorUid,
+        members: {
+          create: {
+            userId: creatorUid,
+          },
+        },
+      },
+      include: {
+        members: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
+
+    return {
+      id: household.id,
+      name: household.name,
+      createdBy: household.createdBy,
+      memberIds: household.members.map((m) => m.userId),
+      memberDetails: household.members.map((m) => ({
+        id: m.user.uid,
+        uid: m.user.uid,
+        email: m.user.email ?? undefined,
+        displayName: m.user.displayName ?? undefined,
+        photoURL: m.user.photoURL ?? undefined,
+        createdAt: m.user.createdAt,
+        updatedAt: m.user.updatedAt,
+      })),
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
     };
-
-    const householdId = await this.firebaseService.createDocument<Household>(
-      'households',
-      householdData,
-    );
-
-    const household: Household = {
-      id: householdId,
-      ...householdData,
-    };
-
-    return this.populateMemberDetails(household);
   }
 
   async update(
     householdId: string,
     updateHouseholdDto: UpdateHouseholdDto,
   ): Promise<HouseholdResponseDto> {
-    const household = await this.findOne(householdId);
+    const household = await this.prisma.household.update({
+      where: { id: householdId },
+      data: {
+        name: updateHouseholdDto.name,
+      },
+      include: {
+        members: {
+          include: {
+            user: true,
+          },
+        },
+      },
+    });
 
-    const updatedData = {
-      ...updateHouseholdDto,
-      updatedAt: new Date(),
+    return {
+      id: household.id,
+      name: household.name,
+      createdBy: household.createdBy,
+      memberIds: household.members.map((m) => m.userId),
+      memberDetails: household.members.map((m) => ({
+        id: m.user.uid,
+        uid: m.user.uid,
+        email: m.user.email ?? undefined,
+        displayName: m.user.displayName ?? undefined,
+        photoURL: m.user.photoURL ?? undefined,
+        createdAt: m.user.createdAt,
+        updatedAt: m.user.updatedAt,
+      })),
+      createdAt: household.createdAt,
+      updatedAt: household.updatedAt,
     };
-
-    await this.firebaseService.updateDocument<Household>(
-      `households/${householdId}`,
-      updatedData,
-    );
-
-    const updatedHousehold: Household = {
-      ...household,
-      ...updatedData,
-    };
-
-    return this.populateMemberDetails(updatedHousehold);
   }
 
   async addMember(
     householdId: string,
     addMemberDto: AddMemberDto,
   ): Promise<HouseholdResponseDto> {
-    const household = await this.findOne(householdId);
-
     // Check if user is already a member
-    if (household.memberIds.includes(addMemberDto.userId)) {
+    const existingMembership = await this.prisma.householdMember.findUnique({
+      where: {
+        userId_householdId: {
+          userId: addMemberDto.userId,
+          householdId,
+        },
+      },
+    });
+
+    if (existingMembership) {
       throw new ConflictException('User is already a member of this household');
     }
 
-    const updatedMembers = [...household.memberIds, addMemberDto.userId];
-    const now = new Date();
-
-    await this.firebaseService.updateDocument<Household>(
-      `households/${householdId}`,
-      {
-        memberIds: updatedMembers,
-        updatedAt: now,
+    // Add the new member
+    await this.prisma.householdMember.create({
+      data: {
+        userId: addMemberDto.userId,
+        householdId,
       },
-    );
+    });
 
-    const updatedHousehold: Household = {
-      ...household,
-      memberIds: updatedMembers,
-      updatedAt: now,
-    };
-
-    return this.populateMemberDetails(updatedHousehold);
+    // Fetch and return the updated household
+    return this.findOne(householdId);
   }
 }

@@ -1,58 +1,69 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
-import { FirebaseService } from '../firebase/firebase.service';
+import { PrismaService } from '../prisma/prisma.service';
 import { CreateCategoryDto } from './dto/create-category.dto';
 import { UpdateCategoryDto } from './dto/update-category.dto';
 import { CategoryResponseDto } from './dto/category-response.dto';
-import { Category } from './entities/category.entity';
 
 @Injectable()
 export class CategoriesService {
-  constructor(private readonly firebaseService: FirebaseService) {}
+  constructor(private readonly prisma: PrismaService) {}
 
   async findAll(householdId: string): Promise<CategoryResponseDto[]> {
-    const categories = await this.firebaseService.queryDocuments<Category>(
-      `households/${householdId}/categories`,
-      (query) => query.orderBy('name', 'asc'),
-    );
+    const categories = await this.prisma.category.findMany({
+      where: { householdId },
+      orderBy: { name: 'asc' },
+    });
 
-    return categories as CategoryResponseDto[];
+    return categories.map((category) => ({
+      id: category.id,
+      householdId: category.householdId,
+      name: category.name,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    }));
   }
 
   async findOne(
     householdId: string,
     categoryId: string,
   ): Promise<CategoryResponseDto> {
-    const category = await this.firebaseService.getDocument<Category>(
-      `households/${householdId}/categories/${categoryId}`,
-    );
+    const category = await this.prisma.category.findFirst({
+      where: {
+        id: categoryId,
+        householdId,
+      },
+    });
 
     if (!category) {
       throw new NotFoundException(`Category with ID ${categoryId} not found`);
     }
 
-    return category as CategoryResponseDto;
+    return {
+      id: category.id,
+      householdId: category.householdId,
+      name: category.name,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
+    };
   }
 
   async create(
     householdId: string,
     createCategoryDto: CreateCategoryDto,
   ): Promise<CategoryResponseDto> {
-    const now = new Date();
-    const categoryData = {
-      ...createCategoryDto,
-      householdId,
-      createdAt: now,
-      updatedAt: now,
-    };
-
-    const categoryId = await this.firebaseService.createDocument<Category>(
-      `households/${householdId}/categories`,
-      categoryData,
-    );
+    const category = await this.prisma.category.create({
+      data: {
+        householdId,
+        name: createCategoryDto.name,
+      },
+    });
 
     return {
-      id: categoryId,
-      ...categoryData,
+      id: category.id,
+      householdId: category.householdId,
+      name: category.name,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
     };
   }
 
@@ -61,30 +72,32 @@ export class CategoriesService {
     categoryId: string,
     updateCategoryDto: UpdateCategoryDto,
   ): Promise<CategoryResponseDto> {
-    const category = await this.findOne(householdId, categoryId);
+    // Verify category exists and belongs to household
+    await this.findOne(householdId, categoryId);
 
-    const updatedData = {
-      ...updateCategoryDto,
-      updatedAt: new Date(),
-    };
-
-    await this.firebaseService.updateDocument<Category>(
-      `households/${householdId}/categories/${categoryId}`,
-      updatedData,
-    );
+    const category = await this.prisma.category.update({
+      where: { id: categoryId },
+      data: {
+        name: updateCategoryDto.name,
+      },
+    });
 
     return {
-      ...category,
-      ...updatedData,
+      id: category.id,
+      householdId: category.householdId,
+      name: category.name,
+      createdAt: category.createdAt,
+      updatedAt: category.updatedAt,
     };
   }
 
   async remove(householdId: string, categoryId: string): Promise<void> {
-    // Verify category exists first
+    // Verify category exists and belongs to household
     await this.findOne(householdId, categoryId);
 
-    await this.firebaseService.deleteDocument(
-      `households/${householdId}/categories/${categoryId}`,
-    );
+    // Delete the category (will set categoryId to null in chores due to onDelete: SetNull)
+    await this.prisma.category.delete({
+      where: { id: categoryId },
+    });
   }
 }
