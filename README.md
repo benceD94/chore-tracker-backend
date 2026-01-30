@@ -1,10 +1,10 @@
 # Chore Tracker Backend
 
-A NestJS-based Firebase proxy API for managing household chores, categories, and completion tracking.
+A NestJS-based API for managing household chores, categories, and completion tracking with PostgreSQL and Prisma ORM.
 
 ## 📋 Description
 
-This backend API provides a structured interface to Firebase Firestore for a chore tracking application. It handles authentication, household management, chore organization, and completion logging with proper authorization and validation.
+This backend API provides a structured interface for a chore tracking application. It handles authentication (via Firebase), household management, chore organization, and completion logging with proper authorization and validation, all backed by a PostgreSQL database.
 
 ## ✨ Features
 
@@ -22,7 +22,7 @@ This backend API provides a structured interface to Firebase Firestore for a cho
 
 - **Framework**: NestJS 11
 - **Language**: TypeScript 5.7
-- **Database**: Firebase Firestore
+- **Database**: PostgreSQL with Prisma ORM
 - **Authentication**: Firebase Admin SDK
 - **Validation**: class-validator & class-transformer
 - **Documentation**: Swagger/OpenAPI
@@ -37,15 +37,30 @@ npm install
 
 ## ⚙️ Configuration
 
-### 1. Firebase Setup
+### 1. PostgreSQL Setup
 
-Create a Firebase project and download your service account credentials:
+Install and start PostgreSQL:
+
+```bash
+# macOS (using Homebrew)
+brew install postgresql@15
+brew services start postgresql@15
+
+# Or use Postgres.app (https://postgresapp.com/)
+
+# Create database
+createdb chore_tracker
+```
+
+### 2. Firebase Setup
+
+Create a Firebase project for authentication:
 
 1. Go to [Firebase Console](https://console.firebase.google.com/)
 2. Select your project → Project Settings → Service Accounts
 3. Click "Generate New Private Key"
 
-### 2. Environment Variables
+### 3. Environment Variables
 
 Copy the example environment file and configure it:
 
@@ -53,14 +68,17 @@ Copy the example environment file and configure it:
 cp .env.example .env
 ```
 
-Edit `.env` with your Firebase credentials:
+Edit `.env` with your credentials:
 
 ```env
 # Server
 PORT=3000
 NODE_ENV=development
 
-# Firebase Admin SDK
+# Database
+DATABASE_URL="postgresql://postgres:yourpassword@localhost:5432/chore_tracker?schema=public"
+
+# Firebase Admin SDK (for authentication only)
 FIREBASE_PROJECT_ID=your-project-id
 FIREBASE_PRIVATE_KEY="-----BEGIN PRIVATE KEY-----\nYour-private-key-here\n-----END PRIVATE KEY-----\n"
 FIREBASE_CLIENT_EMAIL=firebase-adminsdk-xxxxx@your-project.iam.gserviceaccount.com
@@ -70,6 +88,21 @@ SWAGGER_ENABLED=true
 ```
 
 **Important**: Never commit your `.env` file or Firebase service account to version control.
+
+### 4. Run Prisma Migrations
+
+Set up the database schema:
+
+```bash
+# Generate Prisma client
+npx prisma generate
+
+# Run migrations to create tables
+npx prisma migrate deploy
+
+# (Optional) Open Prisma Studio to view data
+npx prisma studio
+```
 
 ## 🚀 Running the Application
 
@@ -255,27 +288,72 @@ Add these to your README once you've enabled the workflows:
 
 ## 🚢 Deployment
 
-### Build
+### Railway Deployment
+
+Railway provides the easiest deployment with built-in PostgreSQL:
+
+1. **Install Railway CLI**:
+   ```bash
+   npm install -g @railway/cli
+   ```
+
+2. **Login to Railway**:
+   ```bash
+   railway login
+   ```
+
+3. **Initialize Project**:
+   ```bash
+   railway init
+   ```
+
+4. **Add PostgreSQL Database**:
+   - Go to Railway dashboard
+   - Click "New" → "Database" → "PostgreSQL"
+   - Copy the `DATABASE_URL` from the PostgreSQL service
+
+5. **Set Environment Variables**:
+   ```bash
+   railway variables set FIREBASE_PROJECT_ID=your-project-id
+   railway variables set FIREBASE_CLIENT_EMAIL=your-client-email
+   railway variables set FIREBASE_PRIVATE_KEY="your-private-key"
+   railway variables set NODE_ENV=production
+   ```
+
+6. **Deploy**:
+   ```bash
+   railway up
+   ```
+
+The `nixpacks.toml` file automatically:
+- Installs dependencies
+- Generates Prisma client
+- Runs database migrations
+- Starts the application
+
+**Important**: Railway will automatically run `npx prisma migrate deploy` before starting your app, creating all necessary database tables.
+
+### Manual Build
 
 ```bash
 npm run build
 ```
 
-### Production Considerations
+### Other Platform Considerations
 
-1. **Environment Variables**: Use secure secret management (e.g., Google Secret Manager)
-2. **CORS**: Configure allowed origins for production
-3. **Rate Limiting**: Consider adding `@nestjs/throttler`
-4. **Logging**: Use structured logging for production
-5. **Health Checks**: Add health check endpoint with `@nestjs/terminus`
-6. **Firestore Indexes**: Create necessary composite indexes
+1. **Environment Variables**: Ensure `DATABASE_URL` and Firebase credentials are set
+2. **Database Migrations**: Run `npm run prisma:migrate` before starting the app
+3. **CORS**: Configure allowed origins for production in `main.ts`
+4. **Rate Limiting**: Consider adding `@nestjs/throttler`
+5. **Logging**: Use structured logging for production
+6. **Health Checks**: Add health check endpoint with `@nestjs/terminus`
 
-### Recommended Platforms
+### Alternative Platforms
 
-- **Google Cloud Run** - Serverless container deployment
-- **Heroku** - Simple platform-as-a-service
-- **AWS Elastic Beanstalk** - Managed application platform
-- **DigitalOcean App Platform** - Simple cloud platform
+- **Heroku** - Add Heroku Postgres addon
+- **Render** - Automatic deploys with PostgreSQL
+- **DigitalOcean App Platform** - Managed PostgreSQL database
+- **Google Cloud Run** - Cloud SQL for PostgreSQL
 
 ## 📚 Additional Resources
 
