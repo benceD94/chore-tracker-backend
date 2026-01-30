@@ -68,7 +68,7 @@ describe('RegistryService', () => {
     }).compile();
 
     service = module.get<RegistryService>(RegistryService);
-    prisma = module.get(PrismaService) as jest.Mocked<PrismaService>;
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -148,7 +148,9 @@ describe('RegistryService', () => {
         filter: RegistryFilter.ALL,
         limit: 10,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       await service.findAll(householdId, queryDto);
@@ -166,7 +168,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.ALL,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       await service.findAll(householdId, queryDto);
@@ -184,7 +188,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.TODAY,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -214,7 +220,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.YESTERDAY,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -244,7 +252,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_WEEK,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -273,7 +283,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.LAST_WEEK,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -302,7 +314,9 @@ describe('RegistryService', () => {
       const queryDto: RegistryQueryDto = {
         filter: RegistryFilter.THIS_MONTH,
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);
@@ -332,7 +346,9 @@ describe('RegistryService', () => {
         filter: RegistryFilter.TODAY,
         userId: 'user-uid-1',
       };
-      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([mockRegistryEntry]);
+      (prisma.registryEntry.findMany as jest.Mock).mockResolvedValue([
+        mockRegistryEntry,
+      ]);
 
       // Act
       const result = await service.findAll(householdId, queryDto);

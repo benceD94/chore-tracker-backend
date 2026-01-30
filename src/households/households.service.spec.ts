@@ -96,7 +96,7 @@ describe('HouseholdsService', () => {
     }).compile();
 
     service = module.get<HouseholdsService>(HouseholdsService);
-    prisma = module.get(PrismaService) as jest.Mocked<PrismaService>;
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -171,7 +171,9 @@ describe('HouseholdsService', () => {
     it('should return household when found with populated memberDetails', async () => {
       // Arrange
       const householdId = 'household-id-123';
-      (prisma.household.findUnique as jest.Mock).mockResolvedValue(mockHousehold);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
 
       // Act
       const result = await service.findOne(householdId);
@@ -318,7 +320,9 @@ describe('HouseholdsService', () => {
         ...mockUpdateHouseholdDto,
         updatedAt: new Date(),
       };
-      (prisma.household.update as jest.Mock).mockResolvedValue(updatedHousehold);
+      (prisma.household.update as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.update(householdId, mockUpdateHouseholdDto);
@@ -376,7 +380,9 @@ describe('HouseholdsService', () => {
         householdId,
         joinedAt: new Date(),
       });
-      (prisma.household.findUnique as jest.Mock).mockResolvedValue(updatedHousehold);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.addMember(householdId, mockAddMemberDto);
@@ -405,7 +411,9 @@ describe('HouseholdsService', () => {
       const existingMemberDto: AddMemberDto = {
         userId: 'user-uid-1',
       };
-      (prisma.household.findUnique as jest.Mock).mockResolvedValue(mockHousehold);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
       (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue({
         userId: 'user-uid-1',
         householdId,
@@ -460,7 +468,9 @@ describe('HouseholdsService', () => {
         householdId,
         joinedAt: new Date(),
       });
-      (prisma.household.findUnique as jest.Mock).mockResolvedValue(updatedHousehold);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        updatedHousehold,
+      );
 
       // Act
       const result = await service.addMember(householdId, mockAddMemberDto);
@@ -477,7 +487,9 @@ describe('HouseholdsService', () => {
       // Arrange
       const householdId = 'household-id-123';
       const error = new Error('Database create failed');
-      (prisma.household.findUnique as jest.Mock).mockResolvedValue(mockHousehold);
+      (prisma.household.findUnique as jest.Mock).mockResolvedValue(
+        mockHousehold,
+      );
       (prisma.householdMember.findUnique as jest.Mock).mockResolvedValue(null);
       (prisma.householdMember.create as jest.Mock).mockRejectedValue(error);
 

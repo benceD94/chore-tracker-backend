@@ -1,4 +1,4 @@
-/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access, @typescript-eslint/no-unsafe-argument */
+/* eslint-disable @typescript-eslint/no-unsafe-assignment, @typescript-eslint/no-unsafe-member-access */
 import {
   Injectable,
   CanActivate,
@@ -45,7 +45,9 @@ export class HouseholdAccessGuard implements CanActivate {
       });
 
       if (!household) {
-        throw new NotFoundException(`Household with ID ${householdId} not found`);
+        throw new NotFoundException(
+          `Household with ID ${householdId} not found`,
+        );
       }
 
       throw new ForbiddenException('You do not have access to this household');

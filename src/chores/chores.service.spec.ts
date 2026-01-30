@@ -83,7 +83,7 @@ describe('ChoresService', () => {
     }).compile();
 
     service = module.get<ChoresService>(ChoresService);
-    prisma = module.get(PrismaService) as jest.Mocked<PrismaService>;
+    prisma = module.get(PrismaService);
   });
 
   afterEach(() => {
@@ -329,8 +329,12 @@ describe('ChoresService', () => {
       };
       const updatedChore = { ...mockChore };
       (prisma.chore.findFirst as jest.Mock).mockResolvedValue(mockChore);
-      (prisma.choreAssignment.deleteMany as jest.Mock).mockResolvedValue({ count: 1 });
-      (prisma.choreAssignment.createMany as jest.Mock).mockResolvedValue({ count: 2 });
+      (prisma.choreAssignment.deleteMany as jest.Mock).mockResolvedValue({
+        count: 1,
+      });
+      (prisma.choreAssignment.createMany as jest.Mock).mockResolvedValue({
+        count: 2,
+      });
       (prisma.chore.update as jest.Mock).mockResolvedValue(updatedChore);
 
       // Act
