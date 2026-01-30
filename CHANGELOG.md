@@ -16,6 +16,22 @@ When the project reaches production-ready status, it will be released as version
 
 ---
 
+## [0.1.3] - 2026-01-30
+
+### Added
+- Automatic default data seeding for new households
+  - Creates 10 default categories (Kitchen, Bathroom, Bedroom, Living Room, Laundry, Outdoors, Pets, Vehicle, General, Kids)
+  - Creates 70+ default chores mapped to appropriate categories
+  - New households are immediately ready to use with pre-configured chores
+  - Category IDs are properly mapped when creating default chores
+
+### Changed
+- `HouseholdsService.create()` now automatically seeds default categories and chores
+  - Uses `getDefaultCategories()` and `getDefaultChores()` from `data/defaultData.ts`
+  - Sequential creation ensures correct category-to-chore relationships
+
+---
+
 ## [0.1.2] - 2026-01-30
 
 ### Fixed

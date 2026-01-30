@@ -83,6 +83,12 @@ describe('HouseholdsService', () => {
         findUnique: jest.fn(),
         create: jest.fn(),
       },
+      category: {
+        create: jest.fn(),
+      },
+      chore: {
+        create: jest.fn(),
+      },
     };
 
     const module: TestingModule = await Test.createTestingModule({
@@ -238,6 +244,23 @@ describe('HouseholdsService', () => {
         ],
       };
       (prisma.household.create as jest.Mock).mockResolvedValue(newHousehold);
+      (prisma.category.create as jest.Mock).mockResolvedValue({
+        id: 'category-id',
+        name: 'Test Category',
+        householdId: 'new-household-id',
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
+      (prisma.chore.create as jest.Mock).mockResolvedValue({
+        id: 'chore-id',
+        name: 'Test Chore',
+        householdId: 'new-household-id',
+        categoryId: 'category-id',
+        points: 1,
+        description: null,
+        createdAt: new Date(),
+        updatedAt: new Date(),
+      });
 
       // Act
       const result = await service.create(mockCreateHouseholdDto, creatorUid);
@@ -261,6 +284,12 @@ describe('HouseholdsService', () => {
           },
         },
       });
+      // Verify default categories were created (10 categories)
+      expect(prisma.category.create).toHaveBeenCalledTimes(10);
+      // Verify default chores were created
+      expect(
+        (prisma.chore.create as jest.Mock).mock.calls.length,
+      ).toBeGreaterThan(0);
       expect(result).toMatchObject({
         id: newHousehold.id,
         name: mockCreateHouseholdDto.name,
@@ -290,6 +319,23 @@ describe('HouseholdsService', () => {
         ],
       };
       (prisma.household.create as jest.Mock).mockResolvedValue(newHousehold);
+      (prisma.category.create as jest.Mock).mockResolvedValue({
+        id: 'category-id',
+        name: 'Test Category',
+        householdId: 'new-household-id',
+        createdAt: now,
+        updatedAt: now,
+      });
+      (prisma.chore.create as jest.Mock).mockResolvedValue({
+        id: 'chore-id',
+        name: 'Test Chore',
+        householdId: 'new-household-id',
+        categoryId: 'category-id',
+        points: 1,
+        description: null,
+        createdAt: now,
+        updatedAt: now,
+      });
 
       // Act
       const result = await service.create(mockCreateHouseholdDto, creatorUid);
