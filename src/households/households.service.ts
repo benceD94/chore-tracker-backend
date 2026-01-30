@@ -8,6 +8,7 @@ import { CreateHouseholdDto } from './dto/create-household.dto';
 import { UpdateHouseholdDto } from './dto/update-household.dto';
 import { AddMemberDto } from './dto/add-member.dto';
 import { HouseholdResponseDto } from './dto/household-response.dto';
+import { getDefaultCategories, getDefaultChores } from '../../data/defaultData';
 
 @Injectable()
 export class HouseholdsService {
@@ -87,6 +88,7 @@ export class HouseholdsService {
     createHouseholdDto: CreateHouseholdDto,
     creatorUid: string,
   ): Promise<HouseholdResponseDto> {
+    // Create the household
     const household = await this.prisma.household.create({
       data: {
         name: createHouseholdDto.name,
@@ -105,6 +107,38 @@ export class HouseholdsService {
         },
       },
     });
+
+    // Create default categories
+    const defaultCategories = getDefaultCategories();
+    const categoryMap: Record<string, string> = {};
+
+    for (const catData of defaultCategories) {
+      const category = await this.prisma.category.create({
+        data: {
+          name: catData.name,
+          householdId: household.id,
+        },
+      });
+      categoryMap[catData.name] = category.id;
+    }
+
+    // Create default chores with correct category IDs
+    const defaultChores = getDefaultChores();
+
+    for (const choreData of defaultChores) {
+      const categoryId = categoryMap[choreData.categoryName];
+      if (categoryId) {
+        await this.prisma.chore.create({
+          data: {
+            name: choreData.name,
+            description: null,
+            points: choreData.points,
+            householdId: household.id,
+            categoryId: categoryId,
+          },
+        });
+      }
+    }
 
     return {
       id: household.id,
