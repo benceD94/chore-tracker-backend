@@ -16,6 +16,22 @@ When the project reaches production-ready status, it will be released as version
 
 ---
 
+## [0.1.1] - 2026-01-30
+
+### Fixed
+- Railway deployment database migration issue
+  - Updated `start:prod` script to run `prisma migrate deploy` before starting the application
+  - Ensures database tables are created/updated automatically on deployment
+  - Fixes "The table `public.households` does not exist" error on fresh deployments
+
+### Removed
+- Removed `firebase.service.ts` Firestore methods (ESLint cleanup)
+  - Removed unused Firestore database methods: `getFirestore()`, `convertTimestamps()`, `getDocument()`, `createDocument()`, `updateDocument()`, `deleteDocument()`, `queryDocuments()`, `setDocument()`
+  - Kept authentication methods: `getAuth()`, `verifyIdToken()`, `getUserByUid()`
+  - Resolved 16 ESLint errors related to unsafe `any` type usage
+
+---
+
 ## [0.1.0] - 2026-01-30
 
 ### Changed
